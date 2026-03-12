@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="manifest" href="manifest.json">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tornado Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: Arial, sans-serif; }
+        #map { position: absolute; top: 0; left: 0; height: 100vh; width: 100vw; }
+        #controls {
+            position: absolute; top: 10px; left: 10px; z-index: 1000;
+            background: rgba(10,12,20,0.95); color: white;
+            padding: 13px 15px; border-radius: 10px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.7); min-width: 245px;
+            max-height: 90vh; overflow-y: auto; border: 1px solid #2a2a3a;
+        }
+        #controls h3 { margin: 0 0 8px 0; font-size: 14px; color: #ff9900; letter-spacing: 1px; }
+        #controls label { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; cursor: pointer; }
+        #controls label:hover { color: #ccc; }
+        .section-title { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin: 10px 0 4px; border-top: 1px solid #1e1e2e; padding-top: 7px; }
+        button { width: 100%; margin: 5px 0 0; padding: 7px; background: #c0392b; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: bold; }
+        button:hover { background: #962d22; }
+        #status        { margin-top: 6px; font-size: 11px; color: #88ccff; min-height: 14px; }
+        #countdown     { font-size: 10px; color: #555; margin-top: 2px; }
+        #radar-status  { font-size: 10px; color: #4a9; margin-top: 2px; }
+        #scan-info     { font-size: 10px; color: #aaa; margin-top: 4px; background: #0a0a14; padding: 4px 6px; border-radius: 4px; }
+        #lightning-status { font-size: 10px; color: #ffe066; margin-top: 2px; }
+        #debug-panel {
+            position: absolute; bottom: 80px; left: 10px; z-index: 1000;
+            background: rgba(0,0,0,0.92); color: #0f0; font-family: monospace;
+            font-size: 10px; padding: 8px 10px; border-radius: 8px;
+            max-width: 420px; max-height: 220px; overflow-y: auto;
+            border: 1px solid #0f0; display: none;
+            white-space: pre-wrap; word-break: break-all;
+        }
+        #debug-toggle {
+            position: absolute; bottom: 55px; left: 10px; z-index: 1001;
+            background: #1a1a2e; color: #0f0; border: 1px solid #0f0;
+            border-radius: 5px; padding: 4px 10px; font-size: 10px;
+            cursor: pointer; font-family: monospace; width: auto; margin: 0;
+        }
+        #timeline {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+            background: rgba(10,12,20,0.95); padding: 10px 16px; border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+            display: flex; align-items: center; gap: 10px;
+            min-width: 420px; color: white; font-size: 12px; border: 1px solid #2a2a3a;
+        }
+        #timeline input[type=range] { flex: 1; accent-color: #ff9900; cursor: pointer; }
+        #play-btn { background: #ff9900; border: none; color: black; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 13px; width: auto; margin: 0; }
+        #play-btn:hover { background: #e08800; }
+        #time-label { min-width: 55px; text-align: center; color: #ff9900; font-weight: bold; }
+        #alerts-panel {
+            position: absolute; top: 10px; right: 10px; z-index: 1000;
+            background: rgba(10,12,20,0.95); color: white;
+            padding: 12px; border-radius: 10px;
+            max-height: 80vh; width: 310px; overflow-y: auto;
+            font-size: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.7); border: 1px solid #2a2a3a;
+        }
+        #alerts-panel h3 { margin: 0 0 4px 0; font-size: 13px; color: #ff9900; }
+        .alert-section-title { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin: 8px 0 3px; border-top: 1px solid #1e1e2e; padding-top: 5px; }
+        .alert-item { border-left: 3px solid #e74c3c; padding: 6px 8px; margin: 4px 0; border-radius: 4px; background: rgba(231,76,60,0.12); cursor: pointer; line-height: 1.4; transition: background 0.2s; }
+        .alert-item:hover { background: rgba(231,76,60,0.35); }
+        .alert-tstorm { border-left-color: #f3c612; background: rgba(243,198,18,0.10); }
+        .alert-tstorm:hover { background: rgba(243,198,18,0.3); }
+        .alert-watch { border-left-color: #ffaa00; background: rgba(255,170,0,0.08); }
+        .alert-watch:hover { background: rgba(255,170,0,0.2); }
+        .no-alerts { color: #555; font-style: italic; }
+        #spc-legend {
+            position: absolute; bottom: 80px; right: 10px; z-index: 1000;
+            background: rgba(10,12,20,0.95); color: white;
+            padding: 8px 12px; border-radius: 8px; font-size: 11px;
+            display: none; border: 1px solid #2a2a3a;
+        }
+        #spc-legend > div { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+        .swatch { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+        @keyframes strikeFade {
+            0%   { opacity:1;  transform:translate(-50%,-50%) scale(1.3); }
+            15%  { opacity:1;  transform:translate(-50%,-50%) scale(1);   }
+            80%  { opacity:.7; transform:translate(-50%,-50%) scale(1);   }
+            100% { opacity:0;  transform:translate(-50%,-50%) scale(.8);  }
+        }
+        .bolt-icon { animation:strikeFade 6s forwards; pointer-events:none; position:absolute; transform:translate(-50%,-50%); }
+        .bolt-icon svg { filter:drop-shadow(0 0 3px #fff700) drop-shadow(0 0 6px #ffaa00); }
+
+        /* ── Popup text fix: no orphan words ── */
+        .leaflet-popup-content { word-break: normal !important; overflow-wrap: break-word; white-space: normal; }
+        .leaflet-popup-content div,
+        .leaflet-popup-content pre { word-break: normal; overflow-wrap: break-word; }
+        .leaflet-popup-content pre { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="controls">
+    <h3>🌪 TORNADO TRACKER</h3>
+    <div class="section-title">Radar</div>
+    <label><input type="checkbox" id="chk-refl" checked onchange="toggleLayer('refl')"> 🌧 Reflectivity</label>
+    <div class="section-title">Map Overlays</div>
+    <label><input type="checkbox" id="chk-counties" checked onchange="toggleLayer('counties')"> 🗺 County Lines</label>
+    <label><input type="checkbox" id="chk-states"   checked onchange="toggleLayer('states')">   🗾 State Lines</label>
+    <label><input type="checkbox" id="chk-labels"   checked onchange="toggleLayer('labels')">   📍 Place Names</label>
+    <label><input type="checkbox" id="chk-lightning" checked onchange="toggleLightning()">      ⚡ Lightning Strikes</label>
+    <div class="section-title">SPC Tornado Outlooks</div>
+    <label><input type="checkbox" id="chk-spc1" onchange="toggleSPC(1)"> 🟥 Day 1 Tornado</label>
+    <label><input type="checkbox" id="chk-spc2" onchange="toggleSPC(2)"> 🟧 Day 2 Tornado</label>
+    <label><input type="checkbox" id="chk-spc3" onchange="toggleSPC(3)"> 🟨 Day 3 Tornado</label>
+    <div class="section-title">Alerts</div>
+    <label><input type="checkbox" id="chk-tornado-alerts" checked onchange="renderAlerts()"> 🌪 Tornado Warnings/Watches</label>
+    <label><input type="checkbox" id="chk-tstorm-alerts"  checked onchange="renderAlerts()"> ⛈ Severe Thunderstorm Warnings</label>
+    <button onclick="refreshAlerts()">🔄 Refresh Alerts</button>
+    <div id="status">Loading...</div>
+    <div id="countdown"></div>
+    <div id="radar-status">Radar: loading...</div>
+    <div id="lightning-status">⚡ Lightning: connecting...</div>
+    <div id="scan-info">📡 NEXRAD N0Q | —</div>
+</div>
+<button id="debug-toggle" onclick="toggleDebug()">🐛 Debug Log</button>
+<div id="debug-panel"></div>
+<div id="timeline">
+    <button id="play-btn" onclick="togglePlay()">▶ Play</button>
+    <input type="range" id="time-slider" min="0" max="6" value="6" step="1" oninput="onSliderChange(this.value)">
+    <span id="time-label">LIVE</span>
+</div>
+<div id="spc-legend">
+    <div style="font-weight:bold;margin-bottom:4px;color:#ff9900;">SPC Tornado Risk</div>
+    <div><span class="swatch" style="background:#007700"></span> 2% Prob</div>
+    <div><span class="swatch" style="background:#7e5300"></span> 5% Prob</div>
+    <div><span class="swatch" style="background:#ffff00"></span> 10% Prob</div>
+    <div><span class="swatch" style="background:#ff9900"></span> 15% Prob</div>
+    <div><span class="swatch" style="background:#ff0000"></span> 30%+ Prob</div>
+    <div><span class="swatch" style="background:#ff00ff"></span> Hatched (Sig)</div>
+</div>
+<div id="alerts-panel">
+    <h3>⚠️ Active US Alerts</h3>
+    <div id="alerts-list"><span class="no-alerts">Fetching...</span></div>
+</div>
+
+<script>
+// ── AUDIO ALERT ───────────────────────────────────────────────────────
+// Plays a distinct tone for new tornado warnings vs watches/SVR
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function getAudioCtx(){
+    if(!audioCtx){ try{ audioCtx=new AudioCtx(); }catch(e){ dbg('AudioCtx failed: '+e.message); } }
+    return audioCtx;
+}
+function playAlertTone(type){
+    // type: 'tornado_warning' | 'watch' | 'svr'
+    const ctx=getAudioCtx(); if(!ctx) return;
+    const freqs = type==='tornado_warning' ? [880,660,880,660,880] :
+                  type==='watch'           ? [520,440,520] :
+                                             [440,380,440];
+    const dur   = type==='tornado_warning' ? 0.18 : 0.15;
+    let t = ctx.currentTime + 0.05;
+    freqs.forEach((freq,i)=>{
+        const osc=ctx.createOscillator();
+        const gain=ctx.createGain();
+        osc.type = type==='tornado_warning' ? 'sawtooth' : 'sine';
+        osc.frequency.setValueAtTime(freq, t);
+        gain.gain.setValueAtTime(0.4, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t+dur);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(t); osc.stop(t+dur);
+        t += dur + 0.04;
+    });
+}
+
+// ── DEBUG ─────────────────────────────────────────────────────────────
+const debugLines=[];
+function dbg(msg){
+    const line=`[${new Date().toLocaleTimeString()}] ${msg}`;
+    debugLines.push(line); if(debugLines.length>200) debugLines.shift();
+    const el=document.getElementById('debug-panel');
+    el.textContent=debugLines.join('\n'); el.scrollTop=el.scrollHeight;
+    console.log(line);
+}
+function toggleDebug(){ const el=document.getElementById('debug-panel'); el.style.display=el.style.display==='none'?'block':'none'; }
+
+// ── MAP ───────────────────────────────────────────────────────────────
+const map=L.map('map').setView([39.5,-98.35],5);
+map.createPane('basePane');      map.getPane('basePane').style.zIndex=200;
+map.createPane('radarPane');     map.getPane('radarPane').style.zIndex=300;
+map.createPane('spcPane');       map.getPane('spcPane').style.zIndex=350;
+map.createPane('bordersPane');   map.getPane('bordersPane').style.zIndex=400;
+map.createPane('alertsPane');    map.getPane('alertsPane').style.zIndex=450;
+map.createPane('lightningPane'); map.getPane('lightningPane').style.zIndex=480;
+map.createPane('labelsPane');    map.getPane('labelsPane').style.zIndex=500;
+map.getPane('radarPane').style.pointerEvents='none';
+map.getPane('bordersPane').style.pointerEvents='none';
+map.getPane('labelsPane').style.pointerEvents='none';
+map.getPane('spcPane').style.pointerEvents='none';
+map.getPane('lightningPane').style.pointerEvents='none';
+
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {pane:'basePane',attribution:'© Esri | Iowa IEM | NOAA NWS | Blitzortung',maxZoom:19}).addTo(map);
+
+// ── RADAR ─────────────────────────────────────────────────────────────
+const FRAME_LABELS=['LIVE','-5m','-10m','-15m','-20m','-25m','-30m'];
+const FRAME_KEYS=['nexrad-n0q-900913','nexrad-n0q-900913-m05m','nexrad-n0q-900913-m10m',
+    'nexrad-n0q-900913-m15m','nexrad-n0q-900913-m20m','nexrad-n0q-900913-m25m','nexrad-n0q-900913-m30m'];
+let cacheBust=Date.now(), radarFrames=buildRadarFrames(), currentFrameIndex=0;
+radarFrames[0].addTo(map);
+document.getElementById('scan-info').textContent=`📡 NEXRAD N0Q | ${new Date().toLocaleTimeString()}`;
+function buildRadarFrames(){
+    return FRAME_KEYS.map(key=>L.tileLayer(
+        `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${key}/{z}/{x}/{y}.png?cb=${cacheBust}`,
+        {pane:'radarPane',opacity:1.0}));
+}
+function refreshRadar(){
+    cacheBust=Date.now(); const on=document.getElementById('chk-refl').checked;
+    radarFrames.forEach(l=>map.removeLayer(l)); radarFrames=buildRadarFrames();
+    if(on) radarFrames[currentFrameIndex].addTo(map);
+    document.getElementById('radar-status').textContent=`Radar: ${new Date().toLocaleTimeString()}`;
+    document.getElementById('scan-info').textContent=`📡 NEXRAD N0Q | ${new Date().toLocaleTimeString()}`;
+}
+setInterval(refreshRadar,300000);
+function showFrame(i){ radarFrames.forEach((l,j)=>{ j===i?l.addTo(map):map.removeLayer(l); }); currentFrameIndex=i; document.getElementById('time-label').textContent=FRAME_LABELS[i]; document.getElementById('time-slider').value=6-i; }
+function onSliderChange(val){ stopPlay(); showFrame(6-parseInt(val)); }
+let playing=false,playInterval=null,playStep=0;
+function togglePlay(){ playing?stopPlay():startPlay(); }
+function startPlay(){ playing=true; document.getElementById('play-btn').textContent='⏹ Stop'; playStep=6; showFrame(6); playInterval=setInterval(()=>{ playStep--; if(playStep<0){stopPlay();showFrame(0);return;} showFrame(playStep); },700); }
+function stopPlay(){ playing=false; clearInterval(playInterval); document.getElementById('play-btn').textContent='▶ Play'; }
+function toggleLayer(name){
+    const on=document.getElementById('chk-'+name).checked;
+    if(name==='refl'){ radarFrames.forEach(l=>map.removeLayer(l)); if(on) radarFrames[currentFrameIndex].addTo(map); }
+    else{ const l={counties:countiesLayer,states:statesLayer,labels:labelsLayer}[name]; if(l) on?l.addTo(map):map.removeLayer(l); }
+}
+
+// ── SPC ───────────────────────────────────────────────────────────────
+const SPC_COLORS={'0.02':'#007700','0.05':'#7e5300','0.10':'#ffff00','0.15':'#ff9900','0.30':'#ff0000','0.45':'#ff00ff','0.60':'#ff00ff','SIGN':'#ff00ff','TSTM':'#5f5f5f','MRGL':'#007700','SLGT':'#ffff00','ENH':'#ff9900','MDT':'#ff0000','HIGH':'#ff00ff'};
+function getSPCColor(f){const l=f.properties?.LABEL||f.properties?.label||f.properties?.DN||'';return SPC_COLORS[String(l).toUpperCase()]||SPC_COLORS[l]||'#ff9900';}
+const SPC_LAYERS={1:null,2:null,3:null},SPC_IDS={1:3,2:9,3:17};
+async function loadSPC(day){
+    try{
+        const data=await(await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${SPC_IDS[day]}/query?where=1%3D1&outFields=*&f=geojson`)).json();
+        if(SPC_LAYERS[day]) map.removeLayer(SPC_LAYERS[day]);
+        SPC_LAYERS[day]=L.geoJSON(data,{pane:'spcPane',style:f=>({color:getSPCColor(f),fillColor:getSPCColor(f),weight:1.5,fillOpacity:0.2,opacity:0.85}),
+            onEachFeature:(f,layer)=>{layer.bindPopup(`<b>Day ${day} SPC Tornado Outlook</b><br>Risk: ${f.properties?.LABEL||f.properties?.label||f.properties?.DN||'N/A'}`);}}).addTo(map);
+        document.getElementById('spc-legend').style.display='block';
+    }catch(e){ dbg(`SPC day${day} error: ${e.message}`); }
+}
+function toggleSPC(day){
+    if(document.getElementById(`chk-spc${day}`).checked){ loadSPC(day); }
+    else{ if(SPC_LAYERS[day]){map.removeLayer(SPC_LAYERS[day]);SPC_LAYERS[day]=null;} if(![1,2,3].some(d=>document.getElementById(`chk-spc${d}`).checked)) document.getElementById('spc-legend').style.display='none'; }
+}
+
+// ── BORDERS & LABELS ──────────────────────────────────────────────────
+const countiesLayer=L.tileLayer('https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/uscounties/{z}/{x}/{y}.png',{pane:'bordersPane',opacity:0.5}).addTo(map);
+const statesLayer  =L.tileLayer('https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/usstates/{z}/{x}/{y}.png',  {pane:'bordersPane',opacity:1.0}).addTo(map);
+map.getPane('bordersPane').style.filter='grayscale(100%) brightness(2) opacity(0.4)';
+const labelsLayer=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{pane:'labelsPane',attribution:'© OpenStreetMap',maxZoom:19,opacity:1.0}).addTo(map);
+map.getPane('labelsPane').style.filter='invert(1) brightness(0.9) contrast(1.4) grayscale(1)';
+map.getPane('labelsPane').style.mixBlendMode='screen';
+
+// ── LIGHTNING ─────────────────────────────────────────────────────────
+const BOLT_SVG=`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="22" viewBox="0 0 16 22"><polygon points="9,0 2,13 7,13 5,22 14,9 9,9 12,0" fill="#FFE83D" stroke="#7a5a00" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
+function lzwDecode(c){const d={};let cc=c[0],op=cc;const out=[cc];let code=256,ph;for(let i=1;i<c.length;i++){const n=c.charCodeAt(i);if(n<256){ph=c[i];}else{ph=d[n]?d[n]:op+cc;}out.push(ph);cc=ph[0];d[code]=op+cc;code++;op=ph;}return out.join('');}
+const lightningLayer=L.layerGroup().addTo(map);
+let lightningEnabled=true,lightningWS=null,strikeCount=0;
+const strikeQueue=[],MAX_STRIKES=500;
+function connectLightning(){
+    const servers=['wss://ws1.blitzortung.org','wss://ws7.blitzortung.org','wss://ws8.blitzortung.org'];
+    let idx=0;
+    function tryConnect(){
+        const url=servers[idx%servers.length]; idx++;
+        dbg(`Lightning: trying ${url}`);
+        try{
+            lightningWS=new WebSocket(url);
+            lightningWS.onopen=()=>{ lightningWS.send(JSON.stringify({a:111})); dbg('Lightning ✓'); document.getElementById('lightning-status').textContent='⚡ Lightning: live ✓'; };
+            lightningWS.onmessage=(e)=>{
+                if(!lightningEnabled) return;
+                try{
+                    let dec; try{dec=JSON.parse(e.data);}catch{dec=JSON.parse(lzwDecode(e.data));}
+                    let lat=dec.lat,lon=dec.lon; if(lat==null||lon==null) return;
+                    if(Math.abs(lat)>90) lat/=1e6; if(Math.abs(lon)>180) lon/=1e6;
+                    if(Math.abs(lat)>90||Math.abs(lon)>180||lat<15||lat>72||lon<-170||lon>-50) return;
+                    addStrike(lat,lon);
+                }catch{}
+            };
+            lightningWS.onerror=()=>{ document.getElementById('lightning-status').textContent='⚡ Lightning: error'; };
+            lightningWS.onclose=()=>{ document.getElementById('lightning-status').textContent='⚡ reconnecting...'; setTimeout(tryConnect,3000); };
+        }catch(e){ setTimeout(tryConnect,5000); }
+    }
+    tryConnect();
+}
+function addStrike(lat,lon){
+    strikeCount++;
+    const icon=L.divIcon({html:`<div class="bolt-icon">${BOLT_SVG}</div>`,className:'',iconSize:[16,22],iconAnchor:[8,11]});
+    const marker=L.marker([lat,lon],{icon,pane:'lightningPane'});
+    lightningLayer.addLayer(marker); strikeQueue.push(marker);
+    setTimeout(()=>{ lightningLayer.removeLayer(marker); const i=strikeQueue.indexOf(marker); if(i>-1) strikeQueue.splice(i,1); },6000);
+    if(strikeQueue.length>MAX_STRIKES){ const old=strikeQueue.shift(); lightningLayer.removeLayer(old); }
+    if(strikeCount%10===0) document.getElementById('lightning-status').textContent=`⚡ Lightning: live (${strikeCount})`;
+}
+function toggleLightning(){
+    lightningEnabled=document.getElementById('chk-lightning').checked;
+    if(!lightningEnabled){ lightningLayer.clearLayers(); strikeQueue.length=0; document.getElementById('lightning-status').textContent='⚡ Lightning: off'; }
+    else{ if(!lightningWS||lightningWS.readyState>1) connectLightning(); else lightningWS.send(JSON.stringify({a:111})); }
+}
+
+// ── ALERT TYPE HELPERS ────────────────────────────────────────────────
+function isTornadoAlert(f)  { return (f.properties.event||'').toLowerCase().includes('tornado'); }
+function isTornadoWarning(f){ const e=(f.properties.event||'').toLowerCase(); return e.includes('tornado')&&e.includes('warning'); }
+function isTornadoWatch(f)  { const e=(f.properties.event||'').toLowerCase(); return e.includes('tornado')&&e.includes('watch'); }
+function isSVR(f)           { return (f.properties.event||'').toLowerCase().includes('severe thunderstorm warning'); }
+function alertStyle(f){
+    if(isTornadoWarning(f)) return {color:'#ff2222',weight:2.5,fillOpacity:0,opacity:1};
+    if(isSVR(f))            return {color:'#f3c612',weight:2,fillOpacity:0,opacity:1};
+    return {color:'#aaa',weight:1,fillOpacity:0,opacity:0.7};
+}
+
+// ── POPUP CONTENT ─────────────────────────────────────────────────────
+// Fix: all text containers use overflow-wrap:break-word and no forced line breaks
+function popupWrap(inner){
+    return `<div style="width:340px;max-height:520px;overflow-y:auto;font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#222;overflow-wrap:break-word;word-break:normal;">${inner}</div>`;
+}
+
+function buildWatchPopup(f){
+    const p=f.properties;
+    const expires=p.expires?new Date(p.expires).toLocaleString():'?';
+    const sent=p.sent?new Date(p.sent).toLocaleString():'?';
+    const area=(p.areaDesc||'').replace(/;/g,'; ');
+    const desc=p.description||'';
+    const instr=p.instruction||'';
+    const watchNum=desc.match(/Tornado Watch Number\s+(\d+)/i)?.[1]
+        || (p.headline||'').match(/Watch\s+#?(\d+)/i)?.[1]
+        || (p.event||'').match(/(\d+)/)?.[1]
+        || '?';
+    const effective=desc.match(/Effective[^\n]*\n([^\n]+)/i)?.[1]?.trim()||'';
+    const threatBlock=desc.match(/\* Primary threats include\.\.\.([\s\S]*?)(?:\n\n|\nSUMMARY)/i)?.[1]||'';
+    const threats=threatBlock.split('\n').map(l=>l.replace(/^\s+/,'').trim()).filter(Boolean);
+    const summary=desc.match(/SUMMARY\.\.\.([\s\S]*?)(?:\n\n|PRECAUTIONARY)/i)?.[1]?.trim().replace(/\s+/g,' ')||'';
+    // Inline styles for text blocks — no white-space:pre so text flows naturally
+    return popupWrap(`
+        <div style="background:#c47000;color:white;padding:8px 12px;border-radius:4px;font-weight:bold;font-size:14px;margin-bottom:8px;">👁 Tornado Watch #${watchNum}</div>
+        <div style="font-size:11px;color:#555;line-height:1.8;margin-bottom:8px;">
+            📍 <span style="overflow-wrap:break-word;">${area}</span><br>
+            🕐 Issued: ${sent}<br>
+            ⏰ Expires: <b>${expires}</b>${effective?`<br>🗓 ${effective}`:''}
+        </div>
+        ${threats.length?`<div style="background:#fff3e0;border-left:3px solid #ff9900;padding:7px 10px;border-radius:3px;margin-bottom:8px;">
+            <div style="font-weight:bold;font-size:11px;color:#c47000;margin-bottom:4px;">⚠️ Primary Threats</div>
+            ${threats.map(t=>`<div style="font-size:11px;padding:2px 0;overflow-wrap:break-word;">• ${t}</div>`).join('')}
+        </div>`:''}
+        ${summary?`<div style="background:#f9f9f9;border-left:3px solid #aaa;padding:7px 10px;border-radius:3px;margin-bottom:8px;font-size:11px;color:#333;overflow-wrap:break-word;"><b>Summary:</b> ${summary}</div>`:''}
+        <details style="margin-top:6px;">
+            <summary style="cursor:pointer;font-weight:bold;color:#c47000;font-size:11px;user-select:none;">📄 Full SPC Statement</summary>
+            <pre style="margin:6px 0 0;font-size:10px;white-space:pre-wrap;overflow-wrap:break-word;background:#f5f5f5;padding:8px;border-radius:4px;max-height:240px;overflow-y:auto;color:#333;">${desc}</pre>
+        </details>
+        ${instr?`<details style="margin-top:5px;">
+            <summary style="cursor:pointer;font-weight:bold;color:#c47000;font-size:11px;user-select:none;">🛡 Safety Actions</summary>
+            <div style="margin-top:6px;font-size:11px;background:#fff8f0;padding:8px;border-radius:4px;line-height:1.7;color:#333;overflow-wrap:break-word;">${instr.replace(/\n/g,' ')}</div>
+        </details>`:''}
+    `);
+}
+
+function buildPopup(f){
+    const p=f.properties;
+    const expires=p.expires?new Date(p.expires).toLocaleString():'N/A';
+    const sent=p.sent?new Date(p.sent).toLocaleString():'N/A';
+    const area=(p.areaDesc||'').replace(/;/g,'; ');
+    const desc=p.description||'', instr=p.instruction||'';
+    const hazard=desc.match(/HAZARD\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+    const source=desc.match(/SOURCE\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+    const impact=desc.match(/IMPACT\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+    const maxWind=desc.match(/MAX WIND GUST\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+    const maxHail=desc.match(/MAX HAIL SIZE\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+    const tornado=desc.match(/TORNADO\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+    const hasDetails=hazard||maxWind||maxHail||tornado||source||impact;
+    const hdrColor=isTornadoWarning(f)?'#c0392b':isSVR(f)?'#b8860b':'#7d3c98';
+    return popupWrap(`
+        <div style="background:${hdrColor};color:white;padding:7px 10px;border-radius:4px;font-weight:bold;font-size:13px;margin-bottom:8px;">⚠️ ${p.event||'Alert'}</div>
+        <div style="color:#555;margin-bottom:6px;font-size:11px;line-height:1.7;">
+            📍 <span style="overflow-wrap:break-word;">${area}</span><br>
+            🕐 Issued: ${sent}<br>⏰ Expires: <b>${expires}</b>
+        </div>
+        <div style="font-weight:bold;margin-bottom:6px;color:#111;overflow-wrap:break-word;">${p.headline||''}</div>
+        ${hasDetails?`<div style="background:#fff8e1;border-left:3px solid #ff9900;padding:7px 9px;margin:6px 0;border-radius:3px;font-size:11px;line-height:1.8;">
+            ${hazard?`<div style="overflow-wrap:break-word;">⚡ <b>Hazard:</b> ${hazard}</div>`:''}
+            ${maxWind?`<div>💨 <b>Max Wind:</b> ${maxWind}</div>`:''}
+            ${maxHail?`<div>🧊 <b>Max Hail:</b> ${maxHail}</div>`:''}
+            ${tornado?`<div style="overflow-wrap:break-word;">🌪 <b>Tornado:</b> ${tornado}</div>`:''}
+            ${source?`<div style="overflow-wrap:break-word;">📡 <b>Source:</b> ${source}</div>`:''}
+            ${impact?`<div style="overflow-wrap:break-word;">🏠 <b>Impact:</b> ${impact}</div>`:''}
+        </div>`:''}
+        <details style="margin-top:7px;">
+            <summary style="cursor:pointer;font-weight:bold;color:#c0392b;font-size:11px;user-select:none;">📄 Full Statement</summary>
+            <pre style="margin:6px 0 0;font-size:10px;white-space:pre-wrap;overflow-wrap:break-word;background:#f5f5f5;padding:8px;border-radius:4px;max-height:220px;overflow-y:auto;color:#333;">${desc||'No details.'}</pre>
+        </details>
+        ${instr?`<details style="margin-top:5px;">
+            <summary style="cursor:pointer;font-weight:bold;color:#c47000;font-size:11px;user-select:none;">🛡 Safety Actions</summary>
+            <div style="margin-top:6px;font-size:11px;background:#fff8f0;padding:8px;border-radius:4px;line-height:1.7;color:#333;overflow-wrap:break-word;">${instr.replace(/\n/g,' ')}</div>
+        </details>`:''}
+    `);
+}
+
+// ── WATCH ZONE FETCHER ────────────────────────────────────────────────
+const watchData=new Map(); // alertId → { fg, center }
+
+async function fetchWatchPolygons(watchFeature){
+    const alertId=watchFeature.id;
+    if(watchData.has(alertId)) return;
+    const zones=watchFeature.properties.affectedZones||[];
+    dbg(`Watch ${alertId}: fetching ${zones.length} zones...`);
+
+    // Mark as pending immediately so concurrent refreshes don't double-fetch
+    watchData.set(alertId, null);
+
+    const zoneResults=await Promise.all(zones.slice(0,30).map(url=>
+        fetch(url).then(r=>r.ok?r.json():null).catch(()=>null)
+    ));
+    const valid=zoneResults.filter(z=>z?.geometry);
+    dbg(`Watch ${alertId}: got ${valid.length}/${zones.length} polygons`);
+
+    const fg=L.featureGroup();
+    valid.forEach(zone=>{
+        L.geoJSON(zone,{pane:'alertsPane',style:{
+            color:'#ffaa00',weight:1.5,fillColor:'#ffaa00',
+            fillOpacity:0.10,opacity:0.9,dashArray:'8,4'
+        }}).addTo(fg);
+    });
+
+    // Bind popup to every child layer so clicking the polygon also works
+    const popupContent=buildWatchPopup(watchFeature);
+    fg.eachLayer(l=>l.bindPopup(popupContent,{maxWidth:380}));
+    fg.addTo(map);
+
+    const center = valid.length ? fg.getBounds().getCenter() : map.getCenter();
+    watchData.set(alertId,{fg, center, popupContent});
+    dbg(`Watch ${alertId}: drawn ✓ center=${center.lat.toFixed(2)},${center.lng.toFixed(2)}`);
+}
+
+function clearOldWatchLayers(activeIds){
+    watchData.forEach((d,id)=>{ if(!activeIds.has(id)){ if(d?.fg) map.removeLayer(d.fg); watchData.delete(id); } });
+}
+
+// ── SAFE FETCH ────────────────────────────────────────────────────────
+async function safeFetch(url){
+    try{
+        const res=await fetch(url,{headers:{'User-Agent':'TornadoTracker/1.0'}});
+        dbg(`  ${url.split('?')[0].split('/').pop()} → HTTP ${res.status}`);
+        if(!res.ok) return [];
+        return (await res.json()).features||[];
+    }catch(e){ dbg(`  fetch err: ${e.message}`); return []; }
+}
+
+// ── ALERT SOUND TRACKING ──────────────────────────────────────────────
+const seenAlertIds = new Set();
+let firstLoad = true;
+
+function checkNewAlerts(alerts){
+    if(firstLoad){ alerts.forEach(f=>seenAlertIds.add(f.id)); firstLoad=false; return; }
+    let newTW=0, newWatch=0, newSVR=0;
+    alerts.forEach(f=>{
+        if(seenAlertIds.has(f.id)) return;
+        seenAlertIds.add(f.id);
+        if(isTornadoWarning(f)) newTW++;
+        else if(isTornadoWatch(f)) newWatch++;
+        else if(isSVR(f)) newSVR++;
+    });
+    // Play highest-priority tone only (don't stack)
+    if(newTW>0)    { dbg(`🔔 New tornado warning(s): ${newTW}`);  playAlertTone('tornado_warning'); }
+    else if(newWatch>0){ dbg(`🔔 New watch(es): ${newWatch}`);    playAlertTone('watch'); }
+    else if(newSVR>0)  { dbg(`🔔 New SVR warning(s): ${newSVR}`); playAlertTone('svr'); }
+}
+
+// ── ALERTS ────────────────────────────────────────────────────────────
+let allAlerts=[], alertMapLayers=[], lastAutoJumpId=null;
+
+async function refreshAlerts(){
+    document.getElementById('status').textContent='Fetching alerts...';
+    document.getElementById('alerts-list').innerHTML='<span class="no-alerts">Loading...</span>';
+    dbg('=== refreshAlerts() ===');
+    const [torRes,svrRes,toaRes,msRes,laRes,alRes,txRes,arRes]=await Promise.all([
+        safeFetch('https://api.weather.gov/alerts/active?code=TOR'),
+        safeFetch('https://api.weather.gov/alerts/active?code=SVR'),
+        safeFetch('https://api.weather.gov/alerts/active?code=TOA'),
+        safeFetch('https://api.weather.gov/alerts/active?area=MS'),
+        safeFetch('https://api.weather.gov/alerts/active?area=LA'),
+        safeFetch('https://api.weather.gov/alerts/active?area=AL'),
+        safeFetch('https://api.weather.gov/alerts/active?area=TX'),
+        safeFetch('https://api.weather.gov/alerts/active?area=AR'),
+    ]);
+    dbg(`TOR=${torRes.length} SVR=${svrRes.length} TOA=${toaRes.length} MS=${msRes.length} LA=${laRes.length} AL=${alRes.length} TX=${txRes.length} AR=${arRes.length}`);
+    const seen=new Set();
+    allAlerts=[...torRes,...svrRes,...toaRes,...msRes,...laRes,...alRes,...txRes,...arRes]
+        .filter(f=>{ if(seen.has(f.id)) return false; seen.add(f.id); return true; })
+        .filter(f=>isTornadoAlert(f)||isSVR(f));
+    dbg(`After filter: TW=${allAlerts.filter(isTornadoWarning).length} TWa=${allAlerts.filter(isTornadoWatch).length} STS=${allAlerts.filter(isSVR).length}`);
+    allAlerts.forEach(f=>dbg(`  ${f.geometry?'✓':'⚠ NO'} geo | zones=${f.properties.affectedZones?.length||0} | "${f.properties.event}"`));
+
+    checkNewAlerts(allAlerts);
+
+    const activeWatchIds=new Set(allAlerts.filter(isTornadoWatch).map(f=>f.id));
+    clearOldWatchLayers(activeWatchIds);
+    if(document.getElementById('chk-tornado-alerts').checked){
+        allAlerts.filter(isTornadoWatch).forEach(f=>fetchWatchPolygons(f));
+    }
+    const jumpTarget=allAlerts.find(f=>isTornadoWarning(f)&&f.id!==lastAutoJumpId);
+    if(jumpTarget){ lastAutoJumpId=jumpTarget.id; setTimeout(()=>autoJump(jumpTarget),800); }
+    renderAlerts();
+    resetCountdown();
+}
+
+function autoJump(f){
+    try{ map.fitBounds(L.geoJSON(f).getBounds().pad(0.2),{maxZoom:11}); }
+    catch(e){ dbg(`autoJump failed: ${e.message}`); }
+}
+
+function renderAlerts(){
+    alertMapLayers.forEach(l=>{ if(l.layer) map.removeLayer(l.layer); });
+    alertMapLayers=[];
+    const showTornado=document.getElementById('chk-tornado-alerts').checked;
+    const showTstorm =document.getElementById('chk-tstorm-alerts').checked;
+    const filtered=allAlerts.filter(f=>(isTornadoAlert(f)&&showTornado)||(isSVR(f)&&showTstorm));
+    const tornadoWarnings=filtered.filter(isTornadoWarning);
+    const tornadoWatches =filtered.filter(isTornadoWatch);
+    const tstormWarnings =filtered.filter(isSVR);
+    document.getElementById('status').textContent=`🌪 ${tornadoWarnings.length} warn / ${tornadoWatches.length} watch | ⛈ ${tstormWarnings.length} SVR`;
+    watchData.forEach(d=>{ if(d?.fg) showTornado?d.fg.addTo(map):map.removeLayer(d.fg); });
+    if(!filtered.length){ document.getElementById('alerts-list').innerHTML='<span class="no-alerts">✅ No active alerts.</span>'; return; }
+    let mapped=0,skipped=0;
+    [...tornadoWarnings,...tstormWarnings].forEach(f=>{
+        if(!f.geometry){ skipped++; return; }
+        const layer=L.geoJSON(f,{pane:'alertsPane',style:()=>alertStyle(f)}).addTo(map);
+        layer.bindPopup(buildPopup(f),{maxWidth:380});
+        alertMapLayers.push({feature:f,layer});
+        mapped++;
+    });
+    tornadoWatches.forEach(f=>alertMapLayers.push({feature:f,layer:null}));
+    dbg(`Mapped ${mapped} warning polygons, skipped ${skipped}`);
+    const sorted=[...tornadoWarnings,...tstormWarnings,...tornadoWatches];
+    let html='',lastType='';
+    sorted.forEach(f=>{
+        const idx=alertMapLayers.findIndex(a=>a.feature===f);
+        const isTW=isTornadoWarning(f),isST=isSVR(f),isWa=isTornadoWatch(f);
+        if(isTW&&lastType!=='tw'){ html+=`<div class="alert-section-title">🌪 Tornado Warnings (${tornadoWarnings.length})</div>`; lastType='tw'; }
+        if(isST&&lastType!=='st'){ html+=`<div class="alert-section-title">⛈ SVR Warnings (${tstormWarnings.length})</div>`; lastType='st'; }
+        if(isWa&&lastType!=='wa'){ html+=`<div class="alert-section-title">👁 Tornado Watches (${tornadoWatches.length})</div>`; lastType='wa'; }
+        const cls=isTW?'alert-item':isST?'alert-item alert-tstorm':'alert-item alert-watch';
+        const exp=f.properties.expires?new Date(f.properties.expires).toLocaleString():'?';
+        const desc=f.properties.description||'';
+        const watchNum=desc.match(/Tornado Watch Number\s+(\d+)/i)?.[1]||'';
+        html+=`<div class="${cls}" onclick="zoomToAlert(${idx})">
+            <strong>${f.properties.event}${watchNum?' #'+watchNum:''}</strong><br>
+            ${(f.properties.areaDesc||'').slice(0,80)}...<br>
+            <small style="color:#666">Exp: ${exp}</small>
+        </div>`;
+    });
+    document.getElementById('alerts-list').innerHTML=html;
+}
+
+window.zoomToAlert=function(i){
+    if(i<0||i>=alertMapLayers.length) return;
+    const{feature:f,layer}=alertMapLayers[i];
+    if(layer){
+        try{ map.fitBounds(layer.getBounds().pad(0.15),{maxZoom:11}); setTimeout(()=>layer.openPopup(),600); return; }catch{}
+    }
+    // Watch — wait briefly in case zones are still loading then open popup
+    function openWatchPopup(attempt){
+        const d=watchData.get(f.id);
+        if(d?.fg){
+            try{
+                map.fitBounds(d.fg.getBounds().pad(0.1),{maxZoom:7});
+                setTimeout(()=>{
+                    // Open popup at center via a temporary marker
+                    L.popup({maxWidth:380}).setLatLng(d.center).setContent(d.popupContent).openOn(map);
+                },700);
+            }catch(e){ dbg(`zoomToWatch err: ${e.message}`); }
+        } else if(attempt<10){
+            // Zones still loading, retry in 500ms
+            setTimeout(()=>openWatchPopup(attempt+1), 500);
+        } else {
+            // Fallback: show popup at map center with available data
+            L.popup({maxWidth:380}).setLatLng(map.getCenter()).setContent(buildWatchPopup(f)).openOn(map);
+        }
+    }
+    openWatchPopup(0);
+};
+
+// ── COUNTDOWN ─────────────────────────────────────────────────────────
+let secondsLeft=60;
+function resetCountdown(){ secondsLeft=60; }
+setInterval(()=>{
+    secondsLeft--;
+    document.getElementById('countdown').textContent=`Alerts refresh in ${secondsLeft}s`;
+    if(secondsLeft<=0) refreshAlerts();
+},1000);
+
+// ── INIT ──────────────────────────────────────────────────────────────
+// Unlock AudioContext on first user interaction (browser requirement)
+document.addEventListener('click', ()=>{ getAudioCtx(); }, {once:true});
+navigator.geolocation.getCurrentPosition(pos=>map.setView([pos.coords.latitude,pos.coords.longitude],9),()=>{});
+refreshAlerts();
+connectLightning();
+</script>
+</body>
+</html>
