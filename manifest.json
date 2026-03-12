@@ -1,6 +1,6 @@
 {
-  "name": "Tornado Tracker",
-  "short_name": "Tornado",
+  "name": "Severe Weather Tracker",
+  "short_name": "SWT",
   "start_url": ".",
   "display": "fullscreen",
   "background_color": "#000000",
@@ -13,3 +13,4 @@
     }
   ]
 }
+
