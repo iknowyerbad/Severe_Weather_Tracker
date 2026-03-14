@@ -1,603 +1,618 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <link rel="manifest" href="manifest.json">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Severe Weather Tracker</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>
-        html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: Arial, sans-serif; }
-        #map { position: absolute; top: 0; left: 0; height: 100vh; width: 100vw; }
-        #controls {
-            position: absolute; top: 10px; left: 10px; z-index: 1000;
-            background: rgba(10,12,20,0.95); color: white;
-            padding: 13px 15px; border-radius: 10px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.7); min-width: 245px;
-            max-height: 90vh; overflow-y: auto; border: 1px solid #2a2a3a;
-        }
-        #controls h3 { margin: 0 0 8px 0; font-size: 14px; color: #ff9900; letter-spacing: 1px; }
-        #controls label { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; cursor: pointer; }
-        #controls label:hover { color: #ccc; }
-        .section-title { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin: 10px 0 4px; border-top: 1px solid #1e1e2e; padding-top: 7px; }
-        button { width: 100%; margin: 5px 0 0; padding: 7px; background: #c0392b; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: bold; }
-        button:hover { background: #962d22; }
-        #status        { margin-top: 6px; font-size: 11px; color: #88ccff; min-height: 14px; }
-        #countdown     { font-size: 10px; color: #555; margin-top: 2px; }
-        #radar-status  { font-size: 10px; color: #4a9; margin-top: 2px; }
-        #scan-info     { font-size: 10px; color: #aaa; margin-top: 4px; background: #0a0a14; padding: 4px 6px; border-radius: 4px; }
-        #lightning-status { font-size: 10px; color: #ffe066; margin-top: 2px; }
-        #debug-panel {
-            position: absolute; bottom: 80px; left: 10px; z-index: 1000;
-            background: rgba(0,0,0,0.92); color: #0f0; font-family: monospace;
-            font-size: 10px; padding: 8px 10px; border-radius: 8px;
-            max-width: 420px; max-height: 220px; overflow-y: auto;
-            border: 1px solid #0f0; display: none;
-            white-space: pre-wrap; word-break: break-all;
-        }
-        #debug-toggle {
-            position: absolute; bottom: 55px; left: 10px; z-index: 1001;
-            background: #1a1a2e; color: #0f0; border: 1px solid #0f0;
-            border-radius: 5px; padding: 4px 10px; font-size: 10px;
-            cursor: pointer; font-family: monospace; width: auto; margin: 0;
-        }
-        #timeline {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
-            background: rgba(10,12,20,0.95); padding: 10px 16px; border-radius: 10px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.7);
-            display: flex; align-items: center; gap: 10px;
-            min-width: 420px; color: white; font-size: 12px; border: 1px solid #2a2a3a;
-        }
-        #timeline input[type=range] { flex: 1; accent-color: #ff9900; cursor: pointer; }
-        #play-btn { background: #ff9900; border: none; color: black; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 13px; width: auto; margin: 0; }
-        #play-btn:hover { background: #e08800; }
-        #time-label { min-width: 55px; text-align: center; color: #ff9900; font-weight: bold; }
-        #alerts-panel {
-            position: absolute; top: 10px; right: 10px; z-index: 1000;
-            background: rgba(10,12,20,0.95); color: white;
-            padding: 12px; border-radius: 10px;
-            max-height: 80vh; width: 310px; overflow-y: auto;
-            font-size: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.7); border: 1px solid #2a2a3a;
-        }
-        #alerts-panel h3 { margin: 0 0 4px 0; font-size: 13px; color: #ff9900; }
-        .alert-section-title { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin: 8px 0 3px; border-top: 1px solid #1e1e2e; padding-top: 5px; }
-        .alert-item { border-left: 3px solid #e74c3c; padding: 6px 8px; margin: 4px 0; border-radius: 4px; background: rgba(231,76,60,0.12); cursor: pointer; line-height: 1.4; transition: background 0.2s; }
-        .alert-item:hover { background: rgba(231,76,60,0.35); }
-        .alert-tstorm { border-left-color: #f3c612; background: rgba(243,198,18,0.10); }
-        .alert-tstorm:hover { background: rgba(243,198,18,0.3); }
-        .alert-watch { border-left-color: #ffaa00; background: rgba(255,170,0,0.08); }
-        .alert-watch:hover { background: rgba(255,170,0,0.2); }
-        .no-alerts { color: #555; font-style: italic; }
-        #spc-legend {
-            position: absolute; bottom: 80px; right: 10px; z-index: 1000;
-            background: rgba(10,12,20,0.95); color: white;
-            padding: 8px 12px; border-radius: 8px; font-size: 11px;
-            display: none; border: 1px solid #2a2a3a;
-        }
-        #spc-legend > div { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
-        .swatch { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
-        @keyframes strikeFade {
-            0%   { opacity:1;  transform:translate(-50%,-50%) scale(1.3); }
-            15%  { opacity:1;  transform:translate(-50%,-50%) scale(1);   }
-            80%  { opacity:.7; transform:translate(-50%,-50%) scale(1);   }
-            100% { opacity:0;  transform:translate(-50%,-50%) scale(.8);  }
-        }
-        .bolt-icon { animation:strikeFade 6s forwards; pointer-events:none; position:absolute; transform:translate(-50%,-50%); }
-        .bolt-icon svg { filter:drop-shadow(0 0 3px #fff700) drop-shadow(0 0 6px #ffaa00); }
-
-        /* ── Popup text fix: no orphan words ── */
-        .leaflet-popup-content { word-break: normal !important; overflow-wrap: break-word; white-space: normal; }
-        .leaflet-popup-content div,
-        .leaflet-popup-content pre { word-break: normal; overflow-wrap: break-word; }
-        .leaflet-popup-content pre { white-space: pre-wrap; }
-    </style>
+<meta charset="UTF-8">
+<link rel="manifest" href="manifest.json">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Severe Weather Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+html,body{margin:0;padding:0;height:100%;overflow:hidden;font-family:Arial,sans-serif;}
+#map{position:absolute;top:0;left:0;height:100vh;width:100vw;}
+#controls{position:absolute;top:10px;left:10px;z-index:1000;background:rgba(10,12,20,0.95);color:white;padding:13px 15px;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.7);min-width:215px;max-height:90vh;overflow-y:auto;border:1px solid #2a2a3a;}
+#controls h3{margin:0 0 8px;font-size:14px;color:#ff9900;letter-spacing:1px;}
+#controls label{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px;cursor:pointer;}
+#controls label:hover{color:#ccc;}
+.section-title{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin:10px 0 4px;border-top:1px solid #1e1e2e;padding-top:7px;}
+.main-btn{width:100%;margin:5px 0 0;padding:7px;background:#c0392b;color:white;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:bold;}
+.main-btn:hover{background:#962d22;}
+#status{margin-top:6px;font-size:11px;color:#88ccff;min-height:14px;}
+#countdown{font-size:10px;color:#555;margin-top:2px;}
+#radar-status{font-size:10px;color:#4a9;margin-top:2px;}
+#scan-info{font-size:10px;color:#aaa;margin-top:4px;background:#0a0a14;padding:4px 6px;border-radius:4px;}
+#lightning-status{font-size:10px;color:#ffe066;margin-top:2px;}
+#storm-cell-status{font-size:10px;color:#ff8c00;margin-top:2px;}
+#wind-obs-status{font-size:10px;color:#88aaff;margin-top:2px;display:none;}
+#spc-legend{display:none;margin-top:6px;background:rgba(0,0,0,.3);padding:7px 9px;border-radius:6px;border:1px solid #2a2a3a;}
+#spc-legend .spc-leg-title{font-size:10px;color:#ff9900;font-weight:bold;margin-bottom:4px;}
+#spc-legend .spc-row{display:flex;align-items:center;gap:6px;font-size:10px;margin:2px 0;}
+.swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
+/* RIGHT PANEL */
+#alerts-panel{position:absolute;top:10px;right:10px;z-index:1000;background:rgba(10,12,20,0.95);color:white;padding:12px;border-radius:10px;max-height:88vh;width:305px;overflow-y:auto;font-size:12px;box-shadow:0 4px 24px rgba(0,0,0,.7);border:1px solid #2a2a3a;}
+#alerts-panel h3{margin:0 0 7px;font-size:13px;color:#ff9900;}
+/* PILLS */
+#cat-toggles{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e1e2e;}
+.cat-pill-group{display:flex;flex-direction:column;gap:2px;}
+.cat-pill{display:flex;align-items:stretch;border-radius:10px;border:1px solid #333;background:rgba(255,255,255,.05);overflow:hidden;transition:all .15s;opacity:.4;}
+.cat-pill.on{opacity:1;border-color:#666;background:rgba(255,255,255,.1);}
+.cat-main{display:flex;align-items:center;gap:4px;padding:3px 6px;cursor:pointer;user-select:none;font-size:10px;flex:1;}
+.cat-main:hover{background:rgba(255,255,255,.12);}
+.cat-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.cat-total{font-size:9px;color:#aaa;margin-left:2px;}
+.cat-expand{font-size:11px;padding:3px 6px;border-left:1px solid #333;cursor:pointer;color:#888;user-select:none;background:rgba(0,0,0,.2);display:flex;align-items:center;}
+.cat-expand:hover{background:rgba(255,200,0,.2);color:#ff9900;}
+.cat-pill.on .cat-expand{color:#ff9900;}
+.cat-sub{display:none;flex-wrap:wrap;gap:3px;padding-left:4px;}
+.cat-sub.open{display:flex;}
+.cat-sub-btn{font-size:9px;padding:2px 7px;border-radius:8px;border:1px solid #444;background:rgba(255,255,255,.06);color:#bbb;cursor:pointer;user-select:none;transition:all .12s;}
+.cat-sub-btn.active{background:rgba(255,255,255,.18);border-color:#999;color:#fff;}
+.cat-sub-btn:hover{background:rgba(255,255,255,.15);}
+/* LEGEND */
+#active-legend{display:none;margin-bottom:7px;padding-bottom:7px;border-bottom:1px solid #1e1e2e;}
+#active-legend .leg-title{font-weight:bold;color:#ff9900;margin-bottom:4px;font-size:11px;}
+#active-legend .leg-row{display:flex;align-items:center;gap:6px;margin:2px 0;font-size:10px;}
+#active-legend .leg-swatch{width:18px;height:3px;border-radius:2px;flex-shrink:0;}
+.alert-section-title{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin:8px 0 3px;border-top:1px solid #1e1e2e;padding-top:5px;}
+.alert-item{border-left:3px solid #aaa;padding:6px 8px;margin:4px 0;border-radius:4px;background:rgba(255,255,255,.05);cursor:pointer;line-height:1.4;transition:background .2s;}
+.alert-item:hover{background:rgba(255,255,255,.15);}
+.no-alerts{color:#555;font-style:italic;}
+/* STORM CELLS */
+@keyframes pulse{0%{transform:scale(1);opacity:.9;}50%{transform:scale(1.3);opacity:.55;}100%{transform:scale(1);opacity:.9;}}
+.sc-marker{cursor:pointer;}
+/* DEBUG */
+#debug-panel{position:absolute;bottom:80px;left:10px;z-index:1000;background:rgba(0,0,0,.92);color:#0f0;font-family:monospace;font-size:10px;padding:8px 10px;border-radius:8px;max-width:480px;max-height:240px;overflow-y:auto;border:1px solid #0f0;display:none;white-space:pre-wrap;word-break:break-all;}
+#debug-toggle{position:absolute;bottom:55px;left:10px;z-index:1001;background:#1a1a2e;color:#0f0;border:1px solid #0f0;border-radius:5px;padding:4px 10px;font-size:10px;cursor:pointer;font-family:monospace;}
+/* TIMELINE */
+#timeline{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:1000;background:rgba(10,12,20,0.95);padding:10px 16px;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.7);display:flex;align-items:center;gap:10px;min-width:420px;color:white;font-size:12px;border:1px solid #2a2a3a;}
+#timeline input[type=range]{flex:1;accent-color:#ff9900;cursor:pointer;}
+#play-btn{background:#ff9900;border:none;color:black;padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:bold;font-size:13px;}
+#time-label{min-width:55px;text-align:center;color:#ff9900;font-weight:bold;}
+@keyframes strikeFade{0%{opacity:1;transform:translate(-50%,-50%) scale(1.3);}15%{opacity:1;transform:translate(-50%,-50%) scale(1);}80%{opacity:.7;}100%{opacity:0;transform:translate(-50%,-50%) scale(.8);}}
+.bolt-icon{animation:strikeFade 6s forwards;pointer-events:none;position:absolute;transform:translate(-50%,-50%);}
+.bolt-icon svg{filter:drop-shadow(0 0 3px #fff700) drop-shadow(0 0 6px #ffaa00);}
+.leaflet-popup-content{word-break:normal!important;overflow-wrap:break-word;white-space:normal;}
+.leaflet-popup-content pre{white-space:pre-wrap;}
+</style>
 </head>
 <body>
 <div id="map"></div>
+
 <div id="controls">
-    <h3>🌪 SEVERE WEATHER TRACKER</h3>
-    <div class="section-title">Radar</div>
-    <label><input type="checkbox" id="chk-refl" checked onchange="toggleLayer('refl')"> 🌧 Reflectivity</label>
-    <div class="section-title">Map Overlays</div>
-    <label><input type="checkbox" id="chk-counties" checked onchange="toggleLayer('counties')"> 🗺 County Lines</label>
-    <label><input type="checkbox" id="chk-states"   checked onchange="toggleLayer('states')">   🗾 State Lines</label>
-    <label><input type="checkbox" id="chk-labels"   checked onchange="toggleLayer('labels')">   📍 Place Names</label>
-    <label><input type="checkbox" id="chk-lightning" checked onchange="toggleLightning()">      ⚡ Lightning Strikes</label>
-    <div class="section-title">SPC Tornado Outlooks</div>
-    <label><input type="checkbox" id="chk-spc1" onchange="toggleSPC(1)"> 🟥 Day 1 Tornado</label>
-    <label><input type="checkbox" id="chk-spc2" onchange="toggleSPC(2)"> 🟧 Day 2 Tornado</label>
-    <label><input type="checkbox" id="chk-spc3" onchange="toggleSPC(3)"> 🟨 Day 3 Tornado</label>
-    <div class="section-title">Alerts</div>
-    <label><input type="checkbox" id="chk-tornado-alerts" checked onchange="renderAlerts()"> 🌪 Tornado Warnings/Watches</label>
-    <label><input type="checkbox" id="chk-tstorm-alerts"  checked onchange="renderAlerts()"> ⛈ Severe Thunderstorm Warnings</label>
-    <button onclick="refreshAlerts()">🔄 Refresh Alerts</button>
-    <div id="status">Loading...</div>
-    <div id="countdown"></div>
-    <div id="radar-status">Radar: loading...</div>
-    <div id="lightning-status">⚡ Lightning: connecting...</div>
-    <div id="scan-info">📡 NEXRAD N0Q | —</div>
+  <h3>⛈ SEVERE WEATHER TRACKER</h3>
+  <div class="section-title">Radar</div>
+  <label><input type="checkbox" id="chk-refl" checked onchange="toggleLayer('refl')"> 🌧 Reflectivity</label>
+  <div class="section-title">Map Overlays</div>
+  <label><input type="checkbox" id="chk-counties" checked onchange="toggleLayer('counties')"> 🗺 County Lines</label>
+  <label><input type="checkbox" id="chk-states"   checked onchange="toggleLayer('states')">   🗾 State Lines</label>
+  <label><input type="checkbox" id="chk-labels"   checked onchange="toggleLayer('labels')">   📍 Place Names</label>
+  <label><input type="checkbox" id="chk-lightning" checked onchange="toggleLightning()">      ⚡ Lightning Strikes</label>
+  <label><input type="checkbox" id="chk-stormcells" checked onchange="toggleStormCells()">   🌀 Storm Cells (Live)</label>
+  <label><input type="checkbox" id="chk-windobs" onchange="toggleWindObs()">                 💨 Wind Observations</label>
+  <div class="section-title">SPC Tornado Outlooks</div>
+  <label><input type="checkbox" id="chk-spc1" onchange="toggleSPC(1)"> Day 1 Tornado</label>
+  <label><input type="checkbox" id="chk-spc2" onchange="toggleSPC(2)"> Day 2 Tornado</label>
+  <label><input type="checkbox" id="chk-spc3" onchange="toggleSPC(3)"> Day 3 Tornado</label>
+  <div id="spc-legend">
+    <div class="spc-leg-title">SPC Tornado Risk</div>
+    <div class="spc-row"><span class="swatch" style="background:#c1e9c1"></span>General Thunder</div>
+    <div class="spc-row"><span class="swatch" style="background:#66a366"></span>Marginal (MRGL)</div>
+    <div class="spc-row"><span class="swatch" style="background:#ffe066"></span>Slight (SLGT)</div>
+    <div class="spc-row"><span class="swatch" style="background:#e6a233"></span>Enhanced (ENH)</div>
+    <div class="spc-row"><span class="swatch" style="background:#e53b3b"></span>Moderate (MDT)</div>
+    <div class="spc-row"><span class="swatch" style="background:#ff00ff"></span>High / Sig</div>
+  </div>
+  <button class="main-btn" onclick="refreshAlerts()">🔄 Refresh Alerts</button>
+  <div id="status">Loading...</div>
+  <div id="countdown"></div>
+  <div id="radar-status">Radar: loading...</div>
+  <div id="lightning-status">⚡ Lightning: connecting...</div>
+  <div id="storm-cell-status">🌀 Storm cells: loading...</div>
+  <div id="wind-obs-status">💨 Wind obs: off</div>
+  <div id="scan-info">📡 NEXRAD N0Q | —</div>
 </div>
+
 <button id="debug-toggle" onclick="toggleDebug()">🐛 Debug Log</button>
 <div id="debug-panel"></div>
+
 <div id="timeline">
-    <button id="play-btn" onclick="togglePlay()">▶ Play</button>
-    <input type="range" id="time-slider" min="0" max="6" value="6" step="1" oninput="onSliderChange(this.value)">
-    <span id="time-label">LIVE</span>
+  <button id="play-btn" onclick="togglePlay()">▶ Play</button>
+  <input type="range" id="time-slider" min="0" max="6" value="6" step="1" oninput="onSliderChange(this.value)">
+  <span id="time-label">LIVE</span>
 </div>
-<div id="spc-legend">
-    <div style="font-weight:bold;margin-bottom:4px;color:#ff9900;">SPC Tornado Risk</div>
-    <div><span class="swatch" style="background:#007700"></span> 2% Prob</div>
-    <div><span class="swatch" style="background:#7e5300"></span> 5% Prob</div>
-    <div><span class="swatch" style="background:#ffff00"></span> 10% Prob</div>
-    <div><span class="swatch" style="background:#ff9900"></span> 15% Prob</div>
-    <div><span class="swatch" style="background:#ff0000"></span> 30%+ Prob</div>
-    <div><span class="swatch" style="background:#ff00ff"></span> Hatched (Sig)</div>
-</div>
+
 <div id="alerts-panel">
-    <h3>⚠️ Active US Alerts</h3>
-    <div id="alerts-list"><span class="no-alerts">Fetching...</span></div>
+  <h3>⚠️ Active US Alerts</h3>
+  <div id="cat-toggles"></div>
+  <div id="active-legend"><div class="leg-title">Active Alert Types</div><div id="legend-items"></div></div>
+  <div id="alerts-list"><span class="no-alerts">Fetching...</span></div>
 </div>
 
 <script>
-// ── AUDIO ALERT ───────────────────────────────────────────────────────
-// Plays a distinct tone for new tornado warnings vs watches/SVR
-const AudioCtx = window.AudioContext || window.webkitAudioContext;
-let audioCtx = null;
-function getAudioCtx(){
-    if(!audioCtx){ try{ audioCtx=new AudioCtx(); }catch(e){ dbg('AudioCtx failed: '+e.message); } }
-    return audioCtx;
+// ── ALERT DEFS ────────────────────────────────────────────────────────
+const ALERT_DEFS=[
+  {label:'Tornado Warning',            color:'#FF0000',cat:'tornado',priority:1, icon:'🌪'},
+  {label:'Tornado Watch',              color:'#FFFF00',cat:'tornado',priority:2, icon:'👁'},
+  {label:'Tornado Statement',          color:'#FF6600',cat:'tornado',priority:3, icon:'📢'},
+  {label:'Severe Thunderstorm Warning',color:'#FFA500',cat:'tstorm', priority:4, icon:'⛈'},
+  {label:'Severe Thunderstorm Watch',  color:'#DB7093',cat:'tstorm', priority:5, icon:'⛈'},
+  {label:'Special Weather Statement',  color:'#FFE4B5',cat:'tstorm', priority:10,icon:'📋'},
+  {label:'Special Marine Warning',     color:'#FFA500',cat:'tstorm', priority:9, icon:'⚓'},
+  {label:'Flash Flood Warning',        color:'#8B0000',cat:'flood',  priority:6, icon:'🌊'},
+  {label:'Flash Flood Watch',          color:'#2E8B57',cat:'flood',  priority:7, icon:'🌊'},
+  {label:'Flood Warning',              color:'#00FF00',cat:'flood',  priority:8, icon:'💧'},
+  {label:'Flood Watch',                color:'#2E8B57',cat:'flood',  priority:11,icon:'💧'},
+  {label:'Flood Advisory',             color:'#00FF7F',cat:'flood',  priority:12,icon:'💧'},
+  {label:'Coastal Flood Warning',      color:'#228B22',cat:'flood',  priority:13,icon:'🌊'},
+  {label:'Coastal Flood Watch',        color:'#66CDAA',cat:'flood',  priority:14,icon:'🌊'},
+  {label:'Coastal Flood Advisory',     color:'#7CFC00',cat:'flood',  priority:15,icon:'🌊'},
+  {label:'High Wind Warning',          color:'#DAA520',cat:'wind',   priority:16,icon:'💨'},
+  {label:'High Wind Watch',            color:'#B8860B',cat:'wind',   priority:17,icon:'💨'},
+  {label:'Wind Advisory',              color:'#D2691E',cat:'wind',   priority:18,icon:'💨'},
+  {label:'Extreme Wind Warning',       color:'#FF8C00',cat:'wind',   priority:15,icon:'🌬'},
+  {label:'Dust Storm Warning',         color:'#FFE4C4',cat:'wind',   priority:19,icon:'🌫'},
+  {label:'Lake Wind Advisory',         color:'#D2691E',cat:'wind',   priority:20,icon:'💨'},
+  {label:'Blizzard Warning',           color:'#FF4500',cat:'winter', priority:21,icon:'❄'},
+  {label:'Winter Storm Warning',       color:'#FF69B4',cat:'winter', priority:22,icon:'❄'},
+  {label:'Winter Storm Watch',         color:'#4169E1',cat:'winter', priority:23,icon:'❄'},
+  {label:'Ice Storm Warning',          color:'#8B008B',cat:'winter', priority:24,icon:'🧊'},
+  {label:'Wind Chill Warning',         color:'#B0C4DE',cat:'winter', priority:25,icon:'🥶'},
+  {label:'Wind Chill Watch',           color:'#5F9EA0',cat:'winter', priority:26,icon:'🥶'},
+  {label:'Wind Chill Advisory',        color:'#AFEEEE',cat:'winter', priority:27,icon:'🥶'},
+  {label:'Heavy Snow Warning',         color:'#6495ED',cat:'winter', priority:28,icon:'❄'},
+  {label:'Winter Weather Advisory',    color:'#7B68EE',cat:'winter', priority:29,icon:'❄'},
+  {label:'Freezing Rain Advisory',     color:'#DA70D6',cat:'winter', priority:30,icon:'🧊'},
+  {label:'Excessive Heat Warning',     color:'#C71585',cat:'heat',   priority:31,icon:'🌡'},
+  {label:'Excessive Heat Watch',       color:'#FF4500',cat:'heat',   priority:32,icon:'🌡'},
+  {label:'Heat Advisory',              color:'#FF7F50',cat:'heat',   priority:33,icon:'🌡'},
+  {label:'Extreme Cold Warning',       color:'#0000FF',cat:'heat',   priority:34,icon:'🥶'},
+  {label:'Extreme Cold Watch',         color:'#0000CD',cat:'heat',   priority:35,icon:'🥶'},
+  {label:'Dense Fog Advisory',         color:'#708090',cat:'fog',    priority:36,icon:'🌫'},
+  {label:'Dense Fog Warning',          color:'#778899',cat:'fog',    priority:37,icon:'🌫'},
+  {label:'Dense Smoke Advisory',       color:'#F4A460',cat:'fog',    priority:38,icon:'🚬'},
+  {label:'Hurricane Warning',          color:'#DC143C',cat:'other',  priority:2, icon:'🌀'},
+  {label:'Hurricane Watch',            color:'#FF00FF',cat:'other',  priority:3, icon:'🌀'},
+  {label:'Tropical Storm Warning',     color:'#B22222',cat:'other',  priority:4, icon:'🌀'},
+  {label:'Storm Surge Warning',        color:'#B524F7',cat:'other',  priority:5, icon:'🌊'},
+  {label:'Red Flag Warning',           color:'#FF1493',cat:'other',  priority:8, icon:'🔥'},
+  {label:'Fire Weather Watch',         color:'#FFDEAD',cat:'other',  priority:9, icon:'🔥'},
+];
+function getAlertDef(f){
+  const ev=(f.properties.event||'').toLowerCase().trim();
+  for(const d of ALERT_DEFS)if(ev===d.label.toLowerCase())return d;
+  for(const d of ALERT_DEFS)if(ev.includes(d.label.toLowerCase()))return d;
+  if(ev.includes('tornado warning'))return ALERT_DEFS[0];
+  if(ev.includes('tornado watch'))return ALERT_DEFS[1];
+  if(ev.includes('severe thunderstorm warning'))return ALERT_DEFS[3];
+  if(ev.includes('severe thunderstorm watch'))return ALERT_DEFS[4];
+  if(ev.includes('special weather'))return ALERT_DEFS[5];
+  if(ev.includes('flash flood warning'))return ALERT_DEFS[7];
+  if(ev.includes('flash flood watch'))return ALERT_DEFS[8];
+  if(ev.includes('flood warning'))return ALERT_DEFS[9];
+  if(ev.includes('flood watch'))return ALERT_DEFS[10];
+  if(ev.includes('high wind warning'))return ALERT_DEFS[15];
+  if(ev.includes('high wind watch'))return ALERT_DEFS[16];
+  if(ev.includes('wind advisory'))return ALERT_DEFS[17];
+  if(ev.includes('blizzard'))return ALERT_DEFS[21];
+  if(ev.includes('winter storm warning'))return ALERT_DEFS[22];
+  if(ev.includes('winter storm watch'))return ALERT_DEFS[23];
+  if(ev.includes('ice storm'))return ALERT_DEFS[24];
+  if(ev.includes('winter weather'))return ALERT_DEFS[29];
+  if(ev.includes('excessive heat warning'))return ALERT_DEFS[31];
+  if(ev.includes('excessive heat watch'))return ALERT_DEFS[32];
+  if(ev.includes('heat advisory'))return ALERT_DEFS[33];
+  if(ev.includes('dense fog'))return ALERT_DEFS[36];
+  if(ev.includes('red flag'))return ALERT_DEFS[43];
+  if(ev.includes('hurricane warning'))return ALERT_DEFS[38];
+  if(ev.includes('hurricane watch'))return ALERT_DEFS[39];
+  if(ev.includes('tropical storm'))return ALERT_DEFS[40];
+  return{label:f.properties.event||'Alert',color:'#aaaaaa',cat:'other',priority:99,icon:'⚠️'};
 }
-function playAlertTone(type){
-    // type: 'tornado_warning' | 'watch' | 'svr'
-    const ctx=getAudioCtx(); if(!ctx) return;
-    const freqs = type==='tornado_warning' ? [880,660,880,660,880] :
-                  type==='watch'           ? [520,440,520] :
-                                             [440,380,440];
-    const dur   = type==='tornado_warning' ? 0.18 : 0.15;
-    let t = ctx.currentTime + 0.05;
-    freqs.forEach((freq,i)=>{
-        const osc=ctx.createOscillator();
-        const gain=ctx.createGain();
-        osc.type = type==='tornado_warning' ? 'sawtooth' : 'sine';
-        osc.frequency.setValueAtTime(freq, t);
-        gain.gain.setValueAtTime(0.4, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t+dur);
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.start(t); osc.stop(t+dur);
-        t += dur + 0.04;
-    });
+const getAlertCat=f=>getAlertDef(f).cat;
+const getAlertColor=f=>getAlertDef(f).color;
+const getAlertPriority=f=>getAlertDef(f).priority;
+const isTornadoWarning=f=>(f.properties.event||'').toLowerCase().includes('tornado warning');
+const isTornadoWatch=f=>{const e=(f.properties.event||'').toLowerCase();return e.includes('tornado')&&e.includes('watch');};
+const isWatch=f=>(f.properties.event||'').toLowerCase().includes('watch');
+const isWarning=f=>(f.properties.event||'').toLowerCase().includes('warning');
+const isLightColor=hex=>{try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return(r*299+g*587+b*114)/1000>140;}catch{return false;}};
+const alertMapStyle=f=>{const c=getAlertColor(f);return{color:c,weight:isTornadoWarning(f)?2.5:1.8,fillOpacity:0,opacity:isTornadoWarning(f)?1:0.85};};
+
+// ── CATEGORY PILLS ────────────────────────────────────────────────────
+const CAT_CFG=[
+  {id:'tornado',label:'Tornado',  color:'#ff0000'},
+  {id:'tstorm', label:'T-Storm',  color:'#ffa500'},
+  {id:'flood',  label:'Flood',    color:'#00cc00'},
+  {id:'wind',   label:'Wind',     color:'#daa520'},
+  {id:'winter', label:'Winter',   color:'#6495ed'},
+  {id:'heat',   label:'Heat/Cold',color:'#c71585'},
+  {id:'fog',    label:'Fog/Smoke',color:'#708090'},
+  {id:'other',  label:'Other',    color:'#aaaaaa'},
+];
+const catState={};
+CAT_CFG.forEach(c=>{catState[c.id]={on:true,warn:true,watch:true,expanded:false};});
+
+function buildPills(){
+  const wrap=document.getElementById('cat-toggles');wrap.innerHTML='';
+  CAT_CFG.forEach(c=>{
+    const g=document.createElement('div');g.className='cat-pill-group';
+    g.innerHTML=`
+    <div class="cat-pill on" id="pill-${c.id}">
+      <div class="cat-main" onclick="toggleCatOn('${c.id}')">
+        <span class="cat-dot" style="background:${c.color}"></span>
+        <span>${c.label}</span><span class="cat-total" id="ct-${c.id}"></span>
+      </div>
+      <div class="cat-expand" id="cexp-${c.id}" onclick="toggleCatExpand('${c.id}')" title="Warn/Watch breakdown">+</div>
+    </div>
+    <div class="cat-sub" id="cs-${c.id}">
+      <div class="cat-sub-btn active" id="csw-${c.id}" onclick="toggleSubFilter('${c.id}','warn')">⚠ Warn <span id="ccw-${c.id}">(0)</span></div>
+      <div class="cat-sub-btn active" id="cse-${c.id}" onclick="toggleSubFilter('${c.id}','watch')">👁 Watch <span id="cce-${c.id}">(0)</span></div>
+    </div>`;
+    wrap.appendChild(g);
+  });
 }
+function toggleCatOn(id){catState[id].on=!catState[id].on;document.getElementById('pill-'+id).classList.toggle('on',catState[id].on);renderAlerts();}
+function toggleCatExpand(id){catState[id].expanded=!catState[id].expanded;document.getElementById('cs-'+id).classList.toggle('open',catState[id].expanded);document.getElementById('cexp-'+id).textContent=catState[id].expanded?'−':'+';}
+function toggleSubFilter(id,type){if(!catState[id].on)return;catState[id][type]=!catState[id][type];document.getElementById(type==='warn'?'csw-'+id:'cse-'+id).classList.toggle('active',catState[id][type]);renderAlerts();}
+function passesFilter(f){const st=catState[getAlertCat(f)];if(!st||!st.on)return false;const ev=(f.properties.event||'').toLowerCase();if(ev.includes('watch'))return st.watch;if(ev.includes('warning'))return st.warn;return true;}
+function updateCatCounts(all){
+  CAT_CFG.forEach(c=>{
+    const tot=all.filter(f=>getAlertCat(f)===c.id).length;
+    const warns=all.filter(f=>getAlertCat(f)===c.id&&isWarning(f)).length;
+    const watchs=all.filter(f=>getAlertCat(f)===c.id&&isWatch(f)).length;
+    const te=document.getElementById('ct-'+c.id);if(te)te.textContent=tot?` (${tot})`:'';
+    const we=document.getElementById('ccw-'+c.id);if(we)we.textContent=`(${warns})`;
+    const ee=document.getElementById('cce-'+c.id);if(ee)ee.textContent=`(${watchs})`;
+  });
+}
+
+// ── AUDIO ─────────────────────────────────────────────────────────────
+let audioCtx=null;
+function getAudioCtx(){if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}return audioCtx;}
+function playAlertTone(p){const ctx=getAudioCtx();if(!ctx)return;let freqs,type;if(p<=2){freqs=[880,660,880,660,880];type='sawtooth';}else if(p<=5){freqs=[660,520,660,520];type='sawtooth';}else if(p<=8){freqs=[520,440,520];type='sine';}else{freqs=[440,380,440];type='sine';}const dur=0.15;let t=ctx.currentTime+0.05;freqs.forEach(f=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.setValueAtTime(f,t);g.gain.setValueAtTime(0.4,t);g.gain.exponentialRampToValueAtTime(0.001,t+dur);o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+dur);t+=dur+0.04;});}
 
 // ── DEBUG ─────────────────────────────────────────────────────────────
-const debugLines=[];
-function dbg(msg){
-    const line=`[${new Date().toLocaleTimeString()}] ${msg}`;
-    debugLines.push(line); if(debugLines.length>200) debugLines.shift();
-    const el=document.getElementById('debug-panel');
-    el.textContent=debugLines.join('\n'); el.scrollTop=el.scrollHeight;
-    console.log(line);
-}
-function toggleDebug(){ const el=document.getElementById('debug-panel'); el.style.display=el.style.display==='none'?'block':'none'; }
+const DL=[];
+function dbg(msg){const l=`[${new Date().toLocaleTimeString()}] ${msg}`;DL.push(l);if(DL.length>300)DL.shift();const el=document.getElementById('debug-panel');el.textContent=DL.join('\n');el.scrollTop=el.scrollHeight;}
+function toggleDebug(){const el=document.getElementById('debug-panel');el.style.display=el.style.display==='none'?'block':'none';}
 
-// ── MAP ───────────────────────────────────────────────────────────────
+// ── MAP SETUP ─────────────────────────────────────────────────────────
 const map=L.map('map').setView([39.5,-98.35],5);
-map.createPane('basePane');      map.getPane('basePane').style.zIndex=200;
-map.createPane('radarPane');     map.getPane('radarPane').style.zIndex=300;
-map.createPane('spcPane');       map.getPane('spcPane').style.zIndex=350;
-map.createPane('bordersPane');   map.getPane('bordersPane').style.zIndex=400;
-map.createPane('alertsPane');    map.getPane('alertsPane').style.zIndex=450;
-map.createPane('lightningPane'); map.getPane('lightningPane').style.zIndex=480;
-map.createPane('labelsPane');    map.getPane('labelsPane').style.zIndex=500;
-map.getPane('radarPane').style.pointerEvents='none';
-map.getPane('bordersPane').style.pointerEvents='none';
+['basePane','radarPane','spcPane','bordersPane','alertsPane','stormPane','windPane','lightningPane','labelsPane']
+  .forEach((p,i)=>{map.createPane(p);map.getPane(p).style.zIndex=200+i*30;});
+['radarPane','bordersPane','spcPane','stormPane','windPane','lightningPane'].forEach(p=>map.getPane(p).style.pointerEvents='none');
 map.getPane('labelsPane').style.pointerEvents='none';
-map.getPane('spcPane').style.pointerEvents='none';
-map.getPane('lightningPane').style.pointerEvents='none';
+map.getPane('stormPane').style.pointerEvents='auto';
 
+// Base satellite
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    {pane:'basePane',attribution:'© Esri | Iowa IEM | NOAA NWS | Blitzortung',maxZoom:19}).addTo(map);
+  {pane:'basePane',attribution:'© Esri | IEM | NOAA NWS | Blitzortung',maxZoom:19}).addTo(map);
+
+// ── LABELS: ESRI Reference overlay (no referer/API key needed) ─────────
+const labelsLayer=L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  {pane:'labelsPane',maxZoom:19,attribution:'© Esri'}).addTo(map);
+// slight brightness boost at higher zooms
+function updateLabelStyle(){const z=map.getZoom();map.getPane('labelsPane').style.opacity=Math.min(1,0.6+(z-4)*0.06).toFixed(2);}
+map.on('zoomend',updateLabelStyle);updateLabelStyle();
 
 // ── RADAR ─────────────────────────────────────────────────────────────
 const FRAME_LABELS=['LIVE','-5m','-10m','-15m','-20m','-25m','-30m'];
-const FRAME_KEYS=['nexrad-n0q-900913','nexrad-n0q-900913-m05m','nexrad-n0q-900913-m10m',
-    'nexrad-n0q-900913-m15m','nexrad-n0q-900913-m20m','nexrad-n0q-900913-m25m','nexrad-n0q-900913-m30m'];
-let cacheBust=Date.now(), radarFrames=buildRadarFrames(), currentFrameIndex=0;
+const FRAME_KEYS=['nexrad-n0q-900913','nexrad-n0q-900913-m05m','nexrad-n0q-900913-m10m','nexrad-n0q-900913-m15m','nexrad-n0q-900913-m20m','nexrad-n0q-900913-m25m','nexrad-n0q-900913-m30m'];
+let cacheBust=Date.now(),radarFrames=buildRadarFrames(),currentFrameIndex=0;
 radarFrames[0].addTo(map);
-document.getElementById('scan-info').textContent=`📡 NEXRAD N0Q | ${new Date().toLocaleTimeString()}`;
-function buildRadarFrames(){
-    return FRAME_KEYS.map(key=>L.tileLayer(
-        `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${key}/{z}/{x}/{y}.png?cb=${cacheBust}`,
-        {pane:'radarPane',opacity:1.0}));
-}
-function refreshRadar(){
-    cacheBust=Date.now(); const on=document.getElementById('chk-refl').checked;
-    radarFrames.forEach(l=>map.removeLayer(l)); radarFrames=buildRadarFrames();
-    if(on) radarFrames[currentFrameIndex].addTo(map);
-    document.getElementById('radar-status').textContent=`Radar: ${new Date().toLocaleTimeString()}`;
-    document.getElementById('scan-info').textContent=`📡 NEXRAD N0Q | ${new Date().toLocaleTimeString()}`;
-}
+function buildRadarFrames(){return FRAME_KEYS.map(k=>L.tileLayer(`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${k}/{z}/{x}/{y}.png?cb=${cacheBust}`,{pane:'radarPane',opacity:1.0}));}
+function refreshRadar(){cacheBust=Date.now();const on=document.getElementById('chk-refl').checked;radarFrames.forEach(l=>map.removeLayer(l));radarFrames=buildRadarFrames();if(on)radarFrames[currentFrameIndex].addTo(map);document.getElementById('radar-status').textContent=`Radar: ${new Date().toLocaleTimeString()}`;document.getElementById('scan-info').textContent=`📡 NEXRAD N0Q | ${new Date().toLocaleTimeString()}`;}
 setInterval(refreshRadar,300000);
-function showFrame(i){ radarFrames.forEach((l,j)=>{ j===i?l.addTo(map):map.removeLayer(l); }); currentFrameIndex=i; document.getElementById('time-label').textContent=FRAME_LABELS[i]; document.getElementById('time-slider').value=6-i; }
-function onSliderChange(val){ stopPlay(); showFrame(6-parseInt(val)); }
+function showFrame(i){radarFrames.forEach((l,j)=>j===i?l.addTo(map):map.removeLayer(l));currentFrameIndex=i;document.getElementById('time-label').textContent=FRAME_LABELS[i];document.getElementById('time-slider').value=6-i;}
+function onSliderChange(v){stopPlay();showFrame(6-parseInt(v));}
 let playing=false,playInterval=null,playStep=0;
-function togglePlay(){ playing?stopPlay():startPlay(); }
-function startPlay(){ playing=true; document.getElementById('play-btn').textContent='⏹ Stop'; playStep=6; showFrame(6); playInterval=setInterval(()=>{ playStep--; if(playStep<0){stopPlay();showFrame(0);return;} showFrame(playStep); },700); }
-function stopPlay(){ playing=false; clearInterval(playInterval); document.getElementById('play-btn').textContent='▶ Play'; }
-function toggleLayer(name){
-    const on=document.getElementById('chk-'+name).checked;
-    if(name==='refl'){ radarFrames.forEach(l=>map.removeLayer(l)); if(on) radarFrames[currentFrameIndex].addTo(map); }
-    else{ const l={counties:countiesLayer,states:statesLayer,labels:labelsLayer}[name]; if(l) on?l.addTo(map):map.removeLayer(l); }
-}
+function togglePlay(){playing?stopPlay():startPlay();}
+function startPlay(){playing=true;document.getElementById('play-btn').textContent='⏹ Stop';playStep=6;showFrame(6);playInterval=setInterval(()=>{playStep--;if(playStep<0){stopPlay();showFrame(0);return;}showFrame(playStep);},700);}
+function stopPlay(){playing=false;clearInterval(playInterval);document.getElementById('play-btn').textContent='▶ Play';}
+function toggleLayer(name){const on=document.getElementById('chk-'+name).checked;if(name==='refl'){radarFrames.forEach(l=>map.removeLayer(l));if(on)radarFrames[currentFrameIndex].addTo(map);}else{const l={counties:countiesLayer,states:statesLayer,labels:labelsLayer}[name];if(l)on?l.addTo(map):map.removeLayer(l);}}
+document.getElementById('scan-info').textContent=`📡 NEXRAD N0Q | ${new Date().toLocaleTimeString()}`;
 
 // ── SPC ───────────────────────────────────────────────────────────────
-const SPC_COLORS={'0.02':'#007700','0.05':'#7e5300','0.10':'#ffff00','0.15':'#ff9900','0.30':'#ff0000','0.45':'#ff00ff','0.60':'#ff00ff','SIGN':'#ff00ff','TSTM':'#5f5f5f','MRGL':'#007700','SLGT':'#ffff00','ENH':'#ff9900','MDT':'#ff0000','HIGH':'#ff00ff'};
-function getSPCColor(f){const l=f.properties?.LABEL||f.properties?.label||f.properties?.DN||'';return SPC_COLORS[String(l).toUpperCase()]||SPC_COLORS[l]||'#ff9900';}
+const SPC_COLORS={TSTM:'#c1e9c1',MRGL:'#66a366',SLGT:'#ffe066',ENH:'#e6a233',MDT:'#e53b3b',HIGH:'#ff00ff',SIGN:'#ff00ff','2':'#66a366','5':'#ffe066','10':'#e6a233','15':'#e53b3b','30':'#ff00ff','0.02':'#66a366','0.05':'#ffe066','0.10':'#e6a233','0.15':'#e53b3b','0.30':'#ff00ff'};
+function getSPCColor(f){const p=f.properties||{};const raw=p.LABEL||p.label||p.RISK||p.risk||p.DN||p.dn||'';return SPC_COLORS[String(raw).toUpperCase().trim()]||SPC_COLORS[raw]||'#66a366';}
+function getSPCLabel(f){const p=f.properties||{};return p.LABEL||p.label||p.RISK||p.risk||p.DN||'N/A';}
 const SPC_LAYERS={1:null,2:null,3:null},SPC_IDS={1:3,2:9,3:17};
-async function loadSPC(day){
-    try{
-        const data=await(await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${SPC_IDS[day]}/query?where=1%3D1&outFields=*&f=geojson`)).json();
-        if(SPC_LAYERS[day]) map.removeLayer(SPC_LAYERS[day]);
-        SPC_LAYERS[day]=L.geoJSON(data,{pane:'spcPane',style:f=>({color:getSPCColor(f),fillColor:getSPCColor(f),weight:1.5,fillOpacity:0.2,opacity:0.85}),
-            onEachFeature:(f,layer)=>{layer.bindPopup(`<b>Day ${day} SPC Tornado Outlook</b><br>Risk: ${f.properties?.LABEL||f.properties?.label||f.properties?.DN||'N/A'}`);}}).addTo(map);
-        document.getElementById('spc-legend').style.display='block';
-    }catch(e){ dbg(`SPC day${day} error: ${e.message}`); }
-}
-function toggleSPC(day){
-    if(document.getElementById(`chk-spc${day}`).checked){ loadSPC(day); }
-    else{ if(SPC_LAYERS[day]){map.removeLayer(SPC_LAYERS[day]);SPC_LAYERS[day]=null;} if(![1,2,3].some(d=>document.getElementById(`chk-spc${d}`).checked)) document.getElementById('spc-legend').style.display='none'; }
-}
+async function loadSPC(day){try{const data=await(await fetch(`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${SPC_IDS[day]}/query?where=1%3D1&outFields=*&f=geojson`)).json();dbg(`SPC d${day}: ${data.features?.length} feats, sample=${JSON.stringify(data.features?.[0]?.properties||{})}`);if(SPC_LAYERS[day])map.removeLayer(SPC_LAYERS[day]);SPC_LAYERS[day]=L.geoJSON(data,{pane:'spcPane',style:f=>({color:getSPCColor(f),fillColor:getSPCColor(f),weight:1.5,fillOpacity:0.25,opacity:0.9}),onEachFeature:(f,l)=>l.bindPopup(`<b>Day ${day} SPC Tornado Outlook</b><br>Risk: ${getSPCLabel(f)}`)}).addTo(map);document.getElementById('spc-legend').style.display='block';}catch(e){dbg(`SPC d${day}: ${e.message}`);}}
+function toggleSPC(day){if(document.getElementById(`chk-spc${day}`).checked){loadSPC(day);}else{if(SPC_LAYERS[day]){map.removeLayer(SPC_LAYERS[day]);SPC_LAYERS[day]=null;}if(![1,2,3].some(d=>document.getElementById(`chk-spc${d}`).checked))document.getElementById('spc-legend').style.display='none';}}
 
-// ── BORDERS & LABELS ──────────────────────────────────────────────────
+// ── BORDERS ───────────────────────────────────────────────────────────
 const countiesLayer=L.tileLayer('https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/uscounties/{z}/{x}/{y}.png',{pane:'bordersPane',opacity:0.5}).addTo(map);
 const statesLayer  =L.tileLayer('https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/usstates/{z}/{x}/{y}.png',  {pane:'bordersPane',opacity:1.0}).addTo(map);
 map.getPane('bordersPane').style.filter='grayscale(100%) brightness(2) opacity(0.4)';
-const labelsLayer=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{pane:'labelsPane',attribution:'© OpenStreetMap',maxZoom:19,opacity:1.0}).addTo(map);
-map.getPane('labelsPane').style.filter='invert(1) brightness(0.9) contrast(1.4) grayscale(1)';
-map.getPane('labelsPane').style.mixBlendMode='screen';
 
 // ── LIGHTNING ─────────────────────────────────────────────────────────
-const BOLT_SVG=`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="22" viewBox="0 0 16 22"><polygon points="9,0 2,13 7,13 5,22 14,9 9,9 12,0" fill="#FFE83D" stroke="#7a5a00" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
-function lzwDecode(c){const d={};let cc=c[0],op=cc;const out=[cc];let code=256,ph;for(let i=1;i<c.length;i++){const n=c.charCodeAt(i);if(n<256){ph=c[i];}else{ph=d[n]?d[n]:op+cc;}out.push(ph);cc=ph[0];d[code]=op+cc;code++;op=ph;}return out.join('');}
+const BOLT_SVG=`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="22" viewBox="0 0 16 22"><polygon points="9,0 2,13 7,13 5,22 14,9 9,9 12,0" fill="#FFE83D" stroke="#7a5a00" stroke-width="1.2"/></svg>`;
+function lzwDecode(c){const d={};let cc=c[0],op=cc;const out=[cc];let code=256,ph;for(let i=1;i<c.length;i++){const n=c.charCodeAt(i);ph=n<256?c[i]:d[n]?d[n]:op+cc;out.push(ph);cc=ph[0];d[code]=op+cc;code++;op=ph;}return out.join('');}
 const lightningLayer=L.layerGroup().addTo(map);
-let lightningEnabled=true,lightningWS=null,strikeCount=0;
-const strikeQueue=[],MAX_STRIKES=500;
+let lightningEnabled=true,lightningWS=null,strikeCount=0,strikeQueue=[];
 function connectLightning(){
-    const servers=['wss://ws1.blitzortung.org','wss://ws7.blitzortung.org','wss://ws8.blitzortung.org'];
-    let idx=0;
-    function tryConnect(){
-        const url=servers[idx%servers.length]; idx++;
-        dbg(`Lightning: trying ${url}`);
-        try{
-            lightningWS=new WebSocket(url);
-            lightningWS.onopen=()=>{ lightningWS.send(JSON.stringify({a:111})); dbg('Lightning ✓'); document.getElementById('lightning-status').textContent='⚡ Lightning: live ✓'; };
-            lightningWS.onmessage=(e)=>{
-                if(!lightningEnabled) return;
-                try{
-                    let dec; try{dec=JSON.parse(e.data);}catch{dec=JSON.parse(lzwDecode(e.data));}
-                    let lat=dec.lat,lon=dec.lon; if(lat==null||lon==null) return;
-                    if(Math.abs(lat)>90) lat/=1e6; if(Math.abs(lon)>180) lon/=1e6;
-                    if(Math.abs(lat)>90||Math.abs(lon)>180||lat<15||lat>72||lon<-170||lon>-50) return;
-                    addStrike(lat,lon);
-                }catch{}
-            };
-            lightningWS.onerror=()=>{ document.getElementById('lightning-status').textContent='⚡ Lightning: error'; };
-            lightningWS.onclose=()=>{ document.getElementById('lightning-status').textContent='⚡ reconnecting...'; setTimeout(tryConnect,3000); };
-        }catch(e){ setTimeout(tryConnect,5000); }
-    }
-    tryConnect();
+  const servers=['wss://ws1.blitzortung.org','wss://ws7.blitzortung.org','wss://ws8.blitzortung.org'];let idx=0;
+  function tryConnect(){const url=servers[idx%servers.length];idx++;
+    try{lightningWS=new WebSocket(url);
+      lightningWS.onopen=()=>{lightningWS.send(JSON.stringify({a:111}));dbg('Lightning ✓');document.getElementById('lightning-status').textContent='⚡ Lightning: live ✓';};
+      lightningWS.onmessage=e=>{if(!lightningEnabled)return;try{let dec;try{dec=JSON.parse(e.data);}catch{dec=JSON.parse(lzwDecode(e.data));}let lat=dec.lat,lon=dec.lon;if(lat==null||lon==null)return;if(Math.abs(lat)>90)lat/=1e6;if(Math.abs(lon)>180)lon/=1e6;if(lat<15||lat>72||lon<-170||lon>-50)return;addStrike(lat,lon);}catch{}};
+      lightningWS.onerror=()=>{document.getElementById('lightning-status').textContent='⚡ Lightning: error';};
+      lightningWS.onclose=()=>{document.getElementById('lightning-status').textContent='⚡ reconnecting...';setTimeout(tryConnect,3000);};}catch(e){setTimeout(tryConnect,5000);}
+  }tryConnect();
 }
-function addStrike(lat,lon){
-    strikeCount++;
-    const icon=L.divIcon({html:`<div class="bolt-icon">${BOLT_SVG}</div>`,className:'',iconSize:[16,22],iconAnchor:[8,11]});
-    const marker=L.marker([lat,lon],{icon,pane:'lightningPane'});
-    lightningLayer.addLayer(marker); strikeQueue.push(marker);
-    setTimeout(()=>{ lightningLayer.removeLayer(marker); const i=strikeQueue.indexOf(marker); if(i>-1) strikeQueue.splice(i,1); },6000);
-    if(strikeQueue.length>MAX_STRIKES){ const old=strikeQueue.shift(); lightningLayer.removeLayer(old); }
-    if(strikeCount%10===0) document.getElementById('lightning-status').textContent=`⚡ Lightning: live (${strikeCount})`;
-}
-function toggleLightning(){
-    lightningEnabled=document.getElementById('chk-lightning').checked;
-    if(!lightningEnabled){ lightningLayer.clearLayers(); strikeQueue.length=0; document.getElementById('lightning-status').textContent='⚡ Lightning: off'; }
-    else{ if(!lightningWS||lightningWS.readyState>1) connectLightning(); else lightningWS.send(JSON.stringify({a:111})); }
-}
+function addStrike(lat,lon){strikeCount++;const icon=L.divIcon({html:`<div class="bolt-icon">${BOLT_SVG}</div>`,className:'',iconSize:[16,22],iconAnchor:[8,11]});const m=L.marker([lat,lon],{icon,pane:'lightningPane'});lightningLayer.addLayer(m);strikeQueue.push(m);setTimeout(()=>{lightningLayer.removeLayer(m);const i=strikeQueue.indexOf(m);if(i>-1)strikeQueue.splice(i,1);},6000);if(strikeQueue.length>500){const old=strikeQueue.shift();lightningLayer.removeLayer(old);}if(strikeCount%10===0)document.getElementById('lightning-status').textContent=`⚡ Lightning: live (${strikeCount})`;}
+function toggleLightning(){lightningEnabled=document.getElementById('chk-lightning').checked;if(!lightningEnabled){lightningLayer.clearLayers();strikeQueue.length=0;document.getElementById('lightning-status').textContent='⚡ Lightning: off';}else{if(!lightningWS||lightningWS.readyState>1)connectLightning();else lightningWS.send(JSON.stringify({a:111}));}}
 
-// ── ALERT TYPE HELPERS ────────────────────────────────────────────────
-function isTornadoAlert(f)  { return (f.properties.event||'').toLowerCase().includes('tornado'); }
-function isTornadoWarning(f){ const e=(f.properties.event||'').toLowerCase(); return e.includes('tornado')&&e.includes('warning'); }
-function isTornadoWatch(f)  { const e=(f.properties.event||'').toLowerCase(); return e.includes('tornado')&&e.includes('watch'); }
-function isSVR(f)           { return (f.properties.event||'').toLowerCase().includes('severe thunderstorm warning'); }
-function alertStyle(f){
-    if(isTornadoWarning(f)) return {color:'#ff2222',weight:2.5,fillOpacity:0,opacity:1};
-    if(isSVR(f))            return {color:'#f3c612',weight:2,fillOpacity:0,opacity:1};
-    return {color:'#aaa',weight:1,fillOpacity:0,opacity:0.7};
+// ── STORM CELLS ───────────────────────────────────────────────────────
+const stormCellLayer=L.layerGroup().addTo(map);
+let stormCellsEnabled=true,activeCells=new Map(),cellAnimTimer=null;
+
+function dbzColor(d){return d>=65?'#ff00ff':d>=60?'#dc143c':d>=55?'#ff4500':d>=50?'#ff8c00':d>=45?'#ffd700':d>=40?'#adff2f':d>=35?'#00fa9a':'#00bfff';}
+function dbzLabel(d){return d>=60?'Extreme':d>=55?'Severe':d>=50?'Heavy':d>=40?'Moderate':'Light';}
+
+function makeStormIcon(dbz,drct,sknt){
+  const c=dbzColor(dbz),sz=dbz>=55?18:dbz>=45?14:10;
+  const arrowLen=Math.min(36,Math.max(10,sknt*0.7));
+  // Convert met heading (0=N,CW) to canvas angle: 0=E,CCW
+  const angle=(90-drct)*Math.PI/180;
+  const ax=Math.cos(angle)*arrowLen,ay=-Math.sin(angle)*arrowLen;
+  const pw=sz+Math.abs(ax)+14,ph=sz+Math.abs(ay)+14;
+  const ox=sz/2+Math.max(0,-ax)+4,oy=sz/2+Math.max(0,-ay)+4;
+  const tx=ox+ax,ty=oy+ay;
+  // arrowhead perp
+  const perp=Math.atan2(ay,ax);
+  const h1x=tx-8*Math.cos(perp-0.45),h1y=ty-8*Math.sin(perp-0.45);
+  const h2x=tx-8*Math.cos(perp+0.45),h2y=ty-8*Math.sin(perp+0.45);
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${pw}" height="${ph}">
+    <circle cx="${ox}" cy="${oy}" r="${sz/2}" fill="${c}" opacity="0.88" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>
+    <line x1="${ox}" y1="${oy}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="${c}" stroke-width="2.2" opacity="0.9"/>
+    <polygon points="${tx.toFixed(1)},${ty.toFixed(1)} ${h1x.toFixed(1)},${h1y.toFixed(1)} ${h2x.toFixed(1)},${h2y.toFixed(1)}" fill="${c}" opacity="0.95"/>
+  </svg>`;
+  return L.divIcon({html:`<div class="sc-marker" style="animation:pulse 2.4s infinite;">${svg}</div>`,className:'',iconSize:[pw,ph],iconAnchor:[ox,oy]});
 }
 
-// ── POPUP CONTENT ─────────────────────────────────────────────────────
-// Fix: all text containers use overflow-wrap:break-word and no forced line breaks
-function popupWrap(inner){
-    return `<div style="width:340px;max-height:520px;overflow-y:auto;font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#222;overflow-wrap:break-word;word-break:normal;">${inner}</div>`;
-}
-
-function buildWatchPopup(f){
-    const p=f.properties;
-    const expires=p.expires?new Date(p.expires).toLocaleString():'?';
-    const sent=p.sent?new Date(p.sent).toLocaleString():'?';
-    const area=(p.areaDesc||'').replace(/;/g,'; ');
-    const desc=p.description||'';
-    const instr=p.instruction||'';
-    const watchNum=desc.match(/Tornado Watch Number\s+(\d+)/i)?.[1]
-        || (p.headline||'').match(/Watch\s+#?(\d+)/i)?.[1]
-        || (p.event||'').match(/(\d+)/)?.[1]
-        || '?';
-    const effective=desc.match(/Effective[^\n]*\n([^\n]+)/i)?.[1]?.trim()||'';
-    const threatBlock=desc.match(/\* Primary threats include\.\.\.([\s\S]*?)(?:\n\n|\nSUMMARY)/i)?.[1]||'';
-    const threats=threatBlock.split('\n').map(l=>l.replace(/^\s+/,'').trim()).filter(Boolean);
-    const summary=desc.match(/SUMMARY\.\.\.([\s\S]*?)(?:\n\n|PRECAUTIONARY)/i)?.[1]?.trim().replace(/\s+/g,' ')||'';
-    // Inline styles for text blocks — no white-space:pre so text flows naturally
-    return popupWrap(`
-        <div style="background:#c47000;color:white;padding:8px 12px;border-radius:4px;font-weight:bold;font-size:14px;margin-bottom:8px;">👁 Tornado Watch #${watchNum}</div>
-        <div style="font-size:11px;color:#555;line-height:1.8;margin-bottom:8px;">
-            📍 <span style="overflow-wrap:break-word;">${area}</span><br>
-            🕐 Issued: ${sent}<br>
-            ⏰ Expires: <b>${expires}</b>${effective?`<br>🗓 ${effective}`:''}
-        </div>
-        ${threats.length?`<div style="background:#fff3e0;border-left:3px solid #ff9900;padding:7px 10px;border-radius:3px;margin-bottom:8px;">
-            <div style="font-weight:bold;font-size:11px;color:#c47000;margin-bottom:4px;">⚠️ Primary Threats</div>
-            ${threats.map(t=>`<div style="font-size:11px;padding:2px 0;overflow-wrap:break-word;">• ${t}</div>`).join('')}
-        </div>`:''}
-        ${summary?`<div style="background:#f9f9f9;border-left:3px solid #aaa;padding:7px 10px;border-radius:3px;margin-bottom:8px;font-size:11px;color:#333;overflow-wrap:break-word;"><b>Summary:</b> ${summary}</div>`:''}
-        <details style="margin-top:6px;">
-            <summary style="cursor:pointer;font-weight:bold;color:#c47000;font-size:11px;user-select:none;">📄 Full SPC Statement</summary>
-            <pre style="margin:6px 0 0;font-size:10px;white-space:pre-wrap;overflow-wrap:break-word;background:#f5f5f5;padding:8px;border-radius:4px;max-height:240px;overflow-y:auto;color:#333;">${desc}</pre>
-        </details>
-        ${instr?`<details style="margin-top:5px;">
-            <summary style="cursor:pointer;font-weight:bold;color:#c47000;font-size:11px;user-select:none;">🛡 Safety Actions</summary>
-            <div style="margin-top:6px;font-size:11px;background:#fff8f0;padding:8px;border-radius:4px;line-height:1.7;color:#333;overflow-wrap:break-word;">${instr.replace(/\n/g,' ')}</div>
-        </details>`:''}
-    `);
-}
-
-function buildPopup(f){
-    const p=f.properties;
-    const expires=p.expires?new Date(p.expires).toLocaleString():'N/A';
-    const sent=p.sent?new Date(p.sent).toLocaleString():'N/A';
-    const area=(p.areaDesc||'').replace(/;/g,'; ');
-    const desc=p.description||'', instr=p.instruction||'';
-    const hazard=desc.match(/HAZARD\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
-    const source=desc.match(/SOURCE\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
-    const impact=desc.match(/IMPACT\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
-    const maxWind=desc.match(/MAX WIND GUST\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
-    const maxHail=desc.match(/MAX HAIL SIZE\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
-    const tornado=desc.match(/TORNADO\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
-    const hasDetails=hazard||maxWind||maxHail||tornado||source||impact;
-    const hdrColor=isTornadoWarning(f)?'#c0392b':isSVR(f)?'#b8860b':'#7d3c98';
-    return popupWrap(`
-        <div style="background:${hdrColor};color:white;padding:7px 10px;border-radius:4px;font-weight:bold;font-size:13px;margin-bottom:8px;">⚠️ ${p.event||'Alert'}</div>
-        <div style="color:#555;margin-bottom:6px;font-size:11px;line-height:1.7;">
-            📍 <span style="overflow-wrap:break-word;">${area}</span><br>
-            🕐 Issued: ${sent}<br>⏰ Expires: <b>${expires}</b>
-        </div>
-        <div style="font-weight:bold;margin-bottom:6px;color:#111;overflow-wrap:break-word;">${p.headline||''}</div>
-        ${hasDetails?`<div style="background:#fff8e1;border-left:3px solid #ff9900;padding:7px 9px;margin:6px 0;border-radius:3px;font-size:11px;line-height:1.8;">
-            ${hazard?`<div style="overflow-wrap:break-word;">⚡ <b>Hazard:</b> ${hazard}</div>`:''}
-            ${maxWind?`<div>💨 <b>Max Wind:</b> ${maxWind}</div>`:''}
-            ${maxHail?`<div>🧊 <b>Max Hail:</b> ${maxHail}</div>`:''}
-            ${tornado?`<div style="overflow-wrap:break-word;">🌪 <b>Tornado:</b> ${tornado}</div>`:''}
-            ${source?`<div style="overflow-wrap:break-word;">📡 <b>Source:</b> ${source}</div>`:''}
-            ${impact?`<div style="overflow-wrap:break-word;">🏠 <b>Impact:</b> ${impact}</div>`:''}
-        </div>`:''}
-        <details style="margin-top:7px;">
-            <summary style="cursor:pointer;font-weight:bold;color:#c0392b;font-size:11px;user-select:none;">📄 Full Statement</summary>
-            <pre style="margin:6px 0 0;font-size:10px;white-space:pre-wrap;overflow-wrap:break-word;background:#f5f5f5;padding:8px;border-radius:4px;max-height:220px;overflow-y:auto;color:#333;">${desc||'No details.'}</pre>
-        </details>
-        ${instr?`<details style="margin-top:5px;">
-            <summary style="cursor:pointer;font-weight:bold;color:#c47000;font-size:11px;user-select:none;">🛡 Safety Actions</summary>
-            <div style="margin-top:6px;font-size:11px;background:#fff8f0;padding:8px;border-radius:4px;line-height:1.7;color:#333;overflow-wrap:break-word;">${instr.replace(/\n/g,' ')}</div>
-        </details>`:''}
-    `);
-}
-
-// ── WATCH ZONE FETCHER ────────────────────────────────────────────────
-const watchData=new Map(); // alertId → { fg, center }
-
-async function fetchWatchPolygons(watchFeature){
-    const alertId=watchFeature.id;
-    if(watchData.has(alertId)) return;
-    const zones=watchFeature.properties.affectedZones||[];
-    dbg(`Watch ${alertId}: fetching ${zones.length} zones...`);
-
-    // Mark as pending immediately so concurrent refreshes don't double-fetch
-    watchData.set(alertId, null);
-
-    const zoneResults=await Promise.all(zones.slice(0,30).map(url=>
-        fetch(url).then(r=>r.ok?r.json():null).catch(()=>null)
-    ));
-    const valid=zoneResults.filter(z=>z?.geometry);
-    dbg(`Watch ${alertId}: got ${valid.length}/${zones.length} polygons`);
-
-    const fg=L.featureGroup();
-    valid.forEach(zone=>{
-        L.geoJSON(zone,{pane:'alertsPane',style:{
-            color:'#ffaa00',weight:1.5,fillColor:'#ffaa00',
-            fillOpacity:0.10,opacity:0.9,dashArray:'8,4'
-        }}).addTo(fg);
-    });
-
-    // Bind popup to every child layer so clicking the polygon also works
-    const popupContent=buildWatchPopup(watchFeature);
-    fg.eachLayer(l=>l.bindPopup(popupContent,{maxWidth:380}));
-    fg.addTo(map);
-
-    const center = valid.length ? fg.getBounds().getCenter() : map.getCenter();
-    watchData.set(alertId,{fg, center, popupContent});
-    dbg(`Watch ${alertId}: drawn ✓ center=${center.lat.toFixed(2)},${center.lng.toFixed(2)}`);
-}
-
-function clearOldWatchLayers(activeIds){
-    watchData.forEach((d,id)=>{ if(!activeIds.has(id)){ if(d?.fg) map.removeLayer(d.fg); watchData.delete(id); } });
-}
-
-// ── SAFE FETCH ────────────────────────────────────────────────────────
-async function safeFetch(url){
+// IEM NEXRAD storm attributes — try multiple known endpoints
+const STORM_URLS=[
+  'https://mesonet.agron.iastate.edu/json/nexrad_attr.json',
+  'https://mesonet.agron.iastate.edu/geojson/nexrad_storm_attr.geojson',
+  'https://mesonet.agron.iastate.edu/api/1/nexrad/stormattr.geojson',
+];
+async function fetchStormCells(){
+  if(!stormCellsEnabled)return;
+  document.getElementById('storm-cell-status').textContent='🌀 Storm cells: fetching...';
+  let raw=null,usedUrl='';
+  for(const url of STORM_URLS){
     try{
-        const res=await fetch(url,{headers:{'User-Agent':'TornadoTracker/1.0'}});
-        dbg(`  ${url.split('?')[0].split('/').pop()} → HTTP ${res.status}`);
-        if(!res.ok) return [];
-        return (await res.json()).features||[];
-    }catch(e){ dbg(`  fetch err: ${e.message}`); return []; }
+      const r=await fetch(url,{signal:AbortSignal.timeout(8000)});
+      if(!r.ok){dbg(`SC ${url} → HTTP ${r.status}`);continue;}
+      const text=await r.text();
+      dbg(`SC ${url} → ${text.slice(0,200)}`);
+      raw=JSON.parse(text);usedUrl=url;break;
+    }catch(e){dbg(`SC ${url} err: ${e.message}`);}
+  }
+  if(!raw){document.getElementById('storm-cell-status').textContent='🌀 Storm cells: endpoint unavailable';return;}
+
+  // Normalise — IEM may return {data:[...]} or GeoJSON {features:[...]}
+  let cells=[];
+  if(Array.isArray(raw.data))cells=raw.data;
+  else if(Array.isArray(raw.features))cells=raw.features.map(f=>({...f.properties,...f.geometry?.coordinates&&{lon:f.geometry.coordinates[0],lat:f.geometry.coordinates[1]}}));
+  dbg(`SC parsed ${cells.length} cells from ${usedUrl}`);
+
+  if(!cells.length){document.getElementById('storm-cell-status').textContent='🌀 Storm cells: none active';return;}
+
+  const seen=new Set(),now=Date.now();
+  cells.forEach(raw=>{
+    const lat=parseFloat(raw.lat??raw.latitude??0);
+    const lon=parseFloat(raw.lon??raw.longitude??0);
+    const drct=parseFloat(raw.drct??raw.direction??0);
+    const sknt=parseFloat(raw.sknt??raw.speed??0);
+    const dbz=parseFloat(raw.max_dbz??raw.maxdbz??raw.dbz??35);
+    const vil=parseFloat(raw.vil??0);
+    const top=parseFloat(raw.top??0);
+    const nexrad=raw.nexrad??raw.wfo??'?';
+    const sid=raw.storm_id??raw.id??`${lat.toFixed(2)},${lon.toFixed(2)}`;
+    const key=`${nexrad}-${sid}`;
+    seen.add(key);if(!lat||!lon)return;
+    if(activeCells.has(key)){
+      const c=activeCells.get(key);Object.assign(c,{lat,lon,drct,sknt,dbz,vil,top,lastUpdate:now});
+      c.marker.setLatLng([lat,lon]);c.marker.setIcon(makeStormIcon(dbz,drct,sknt));
+    }else{
+      const marker=L.marker([lat,lon],{icon:makeStormIcon(dbz,drct,sknt),pane:'stormPane',zIndexOffset:500});
+      marker.bindPopup(`<div style="min-width:220px;font-size:12px;font-family:Arial">
+        <div style="background:${dbzColor(dbz)};color:#000;padding:5px 9px;border-radius:4px;font-weight:bold;margin-bottom:6px;">🌀 Storm Cell — ${dbzLabel(dbz)}</div>
+        <div style="line-height:1.9;font-size:11px;">
+          📡 <b>Radar:</b> ${nexrad} &nbsp;|&nbsp; ID: ${sid}<br>
+          ⚡ <b>Max dBZ:</b> ${dbz}<br>
+          💧 <b>VIL:</b> ${vil} kg/m²<br>
+          ☁ <b>Storm Top:</b> ${top?(top/1000).toFixed(1)+' kft':'?'}<br>
+          🧭 <b>Motion:</b> ${drct}° at ${Math.round(sknt)} kts (${Math.round(sknt*1.15)} mph)
+        </div></div>`,{maxWidth:280});
+      stormCellLayer.addLayer(marker);
+      activeCells.set(key,{marker,lat,lon,drct,sknt,dbz,vil,top,lastUpdate:now});
+    }
+  });
+  activeCells.forEach((c,k)=>{if(!seen.has(k)){stormCellLayer.removeLayer(c.marker);activeCells.delete(k);}});
+  document.getElementById('storm-cell-status').textContent=`🌀 Storm cells: ${activeCells.size} active`;
+  if(!cellAnimTimer&&activeCells.size>0)animateCells();
+}
+const MPD=111320; // meters per degree lat
+function animateCells(){
+  if(!stormCellsEnabled||activeCells.size===0){cellAnimTimer=null;return;}
+  const dt=3; // seconds per step
+  activeCells.forEach(c=>{
+    if(c.sknt<3)return;
+    const mps=c.sknt*0.514444;
+    // drct = meteorological heading = degrees clockwise from N the storm is moving TOWARD
+    const rad=c.drct*Math.PI/180;
+    const dlat=(mps*dt*Math.cos(rad))/MPD;          // N component
+    const dlon=(mps*dt*Math.sin(rad))/(MPD*Math.cos(c.lat*Math.PI/180)); // E component
+    c.lat+=dlat;c.lon+=dlon;
+    c.marker.setLatLng([c.lat,c.lon]);
+  });
+  cellAnimTimer=setTimeout(animateCells,dt*1000);
+}
+function toggleStormCells(){
+  stormCellsEnabled=document.getElementById('chk-stormcells').checked;
+  if(stormCellsEnabled){stormCellLayer.addTo(map);fetchStormCells();}
+  else{if(cellAnimTimer){clearTimeout(cellAnimTimer);cellAnimTimer=null;}stormCellLayer.clearLayers();activeCells.clear();document.getElementById('storm-cell-status').textContent='🌀 Storm cells: off';}
+}
+setInterval(()=>{if(stormCellsEnabled)fetchStormCells();},300000);
+
+// ── WIND OBSERVATIONS (IEM per-state ASOS) ────────────────────────────
+const windObsLayer=L.layerGroup();let windObsEnabled=false;
+// CONUS state codes + rough centroid for viewport filtering
+const STATES={AL:[32.8,-86.8],AR:[34.8,-92.2],AZ:[34.3,-111.1],CA:[37.2,-119.4],CO:[39.0,-105.5],CT:[41.6,-72.7],DE:[39.0,-75.5],FL:[28.1,-81.6],GA:[32.7,-83.2],IA:[42.1,-93.5],ID:[44.4,-114.6],IL:[40.0,-89.2],IN:[39.9,-86.3],KS:[38.5,-98.4],KY:[37.5,-85.3],LA:[31.2,-91.8],MA:[42.3,-71.8],MD:[39.0,-76.8],ME:[45.4,-69.2],MI:[43.3,-84.5],MN:[46.4,-93.1],MO:[38.5,-92.5],MS:[32.7,-89.7],MT:[47.0,-109.6],NC:[35.6,-79.4],ND:[47.5,-100.5],NE:[41.5,-99.9],NH:[43.7,-71.6],NJ:[40.1,-74.5],NM:[34.5,-106.2],NV:[38.5,-117.1],NY:[42.7,-75.5],OH:[40.4,-82.7],OK:[35.6,-97.5],OR:[44.1,-120.5],PA:[40.9,-77.8],RI:[41.7,-71.6],SC:[33.9,-80.9],SD:[44.4,-100.2],TN:[35.9,-86.7],TX:[31.1,-97.6],UT:[39.3,-111.1],VA:[37.5,-78.8],VT:[44.0,-72.7],WA:[47.4,-120.4],WI:[44.3,-89.8],WV:[38.6,-80.6],WY:[43.0,-107.6]};
+
+function windArrowSVG(drct,sknt){
+  const mph=sknt*1.15;const c=mph>40?'#ff4500':mph>25?'#ffa500':mph>10?'#ffff66':'#aaffaa';
+  const len=Math.min(20,Math.max(6,sknt*0.45));
+  const angle=(90-drct)*Math.PI/180;
+  const ex=12+Math.cos(angle)*len,ey=12-Math.sin(angle)*len;
+  const p=Math.atan2(ey-12,ex-12);
+  const h1x=ex-5*Math.cos(p-0.5),h1y=ey-5*Math.sin(p-0.5);
+  const h2x=ex-5*Math.cos(p+0.5),h2y=ey-5*Math.sin(p+0.5);
+  return`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" style="overflow:visible"><circle cx="12" cy="12" r="2.5" fill="${c}" opacity="0.9"/><line x1="12" y1="12" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}" stroke="${c}" stroke-width="1.8" opacity="0.85"/><polygon points="${ex.toFixed(1)},${ey.toFixed(1)} ${h1x.toFixed(1)},${h1y.toFixed(1)} ${h2x.toFixed(1)},${h2y.toFixed(1)}" fill="${c}"/></svg>`;
 }
 
-// ── ALERT SOUND TRACKING ──────────────────────────────────────────────
-const seenAlertIds = new Set();
-let firstLoad = true;
-
-function checkNewAlerts(alerts){
-    if(firstLoad){ alerts.forEach(f=>seenAlertIds.add(f.id)); firstLoad=false; return; }
-    let newTW=0, newWatch=0, newSVR=0;
-    alerts.forEach(f=>{
-        if(seenAlertIds.has(f.id)) return;
-        seenAlertIds.add(f.id);
-        if(isTornadoWarning(f)) newTW++;
-        else if(isTornadoWatch(f)) newWatch++;
-        else if(isSVR(f)) newSVR++;
-    });
-    // Play highest-priority tone only (don't stack)
-    if(newTW>0)    { dbg(`🔔 New tornado warning(s): ${newTW}`);  playAlertTone('tornado_warning'); }
-    else if(newWatch>0){ dbg(`🔔 New watch(es): ${newWatch}`);    playAlertTone('watch'); }
-    else if(newSVR>0)  { dbg(`🔔 New SVR warning(s): ${newSVR}`); playAlertTone('svr'); }
+async function fetchWindObs(){
+  if(!windObsEnabled)return;
+  const st=document.getElementById('wind-obs-status');
+  st.textContent='💨 Wind obs: fetching...';windObsLayer.clearLayers();
+  const b=map.getBounds().pad(0.2);
+  // Select states whose centroid is in the current map bounds
+  const visStates=Object.entries(STATES).filter(([,c])=>b.contains(L.latLng(c[0],c[1]))).map(([s])=>s);
+  // If no centroids in view (very zoomed in) grab nearest states
+  const targetStates=visStates.length?visStates:Object.keys(STATES);
+  dbg(`WindObs: fetching ${targetStates.length} states: ${targetStates.join(',')}`);
+  let total=0,errors=0;
+  await Promise.all(targetStates.map(async state=>{
+    // IEM current observations API — network={STATE}_ASOS
+    const url=`https://mesonet.agron.iastate.edu/api/1/currents.geojson?network=${state}_ASOS`;
+    try{
+      const r=await fetch(url,{signal:AbortSignal.timeout(8000)});
+      if(!r.ok){errors++;dbg(`WindObs ${state}: HTTP ${r.status}`);return;}
+      const data=await r.json();
+      const feats=data.features||[];
+      if(state==='IA')dbg(`WindObs sample (IA): ${JSON.stringify(feats[0]?.properties||{}).slice(0,200)}`);
+      feats.forEach(f=>{
+        const p=f.properties||{};
+        const drct=parseFloat(p.drct??p.wind_drct??p.winddirection??NaN);
+        const sknt=parseFloat(p.sknt??p.wind_speed??p.windspeed??NaN);
+        if(isNaN(drct)||isNaN(sknt)||sknt<2)return;
+        const coords=f.geometry?.coordinates;if(!coords)return;
+        const icon=L.divIcon({html:windArrowSVG(drct,sknt),className:'',iconSize:[24,24],iconAnchor:[12,12]});
+        const m=L.marker([coords[1],coords[0]],{icon,pane:'windPane'});
+        m.bindTooltip(`${p.station||p.id||''}: ${Math.round(sknt*1.15)}mph @ ${drct}°`,{direction:'top',offset:[0,-5]});
+        windObsLayer.addLayer(m);total++;
+      });
+    }catch(e){errors++;dbg(`WindObs ${state}: ${e.message}`);}
+  }));
+  if(total>0)windObsLayer.addTo(map);
+  st.textContent=`💨 Wind obs: ${total} stations${errors?` (${errors} err)`:''}`;
+  dbg(`WindObs done: ${total} arrows, ${errors} errors`);
 }
+function toggleWindObs(){windObsEnabled=document.getElementById('chk-windobs').checked;const el=document.getElementById('wind-obs-status');el.style.display=windObsEnabled?'block':'none';if(windObsEnabled)fetchWindObs();else{windObsLayer.clearLayers();map.removeLayer(windObsLayer);}}
+setInterval(()=>{if(windObsEnabled)fetchWindObs();},600000);
+
+// ── POPUPS ────────────────────────────────────────────────────────────
+function popupWrap(inner){return`<div style="width:340px;max-height:520px;overflow-y:auto;font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#222;overflow-wrap:break-word;">${inner}</div>`;}
+function buildGenericPopup(f){
+  const p=f.properties,def=getAlertDef(f);
+  const expires=p.expires?new Date(p.expires).toLocaleString():'N/A';
+  const sent=p.sent?new Date(p.sent).toLocaleString():'N/A';
+  const area=(p.areaDesc||'').replace(/;/g,'; ');
+  const desc=p.description||'',instr=p.instruction||'';
+  const hazard=desc.match(/HAZARD\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+  const source=desc.match(/SOURCE\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+  const impact=desc.match(/IMPACT\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+  const maxWind=desc.match(/MAX WIND GUST\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+  const maxHail=desc.match(/MAX HAIL SIZE\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+  const tornado=desc.match(/TORNADO\.\.\.(.*?)(?:\n|$)/)?.[1]?.trim()||'';
+  const hasD=hazard||maxWind||maxHail||tornado||source||impact;
+  const tc=isLightColor(def.color)?'#000':'#fff';
+  return popupWrap(`<div style="background:${def.color};color:${tc};padding:7px 10px;border-radius:4px;font-weight:bold;font-size:13px;margin-bottom:8px;">${def.icon} ${p.event||'Alert'}</div>
+  <div style="color:#555;font-size:11px;line-height:1.7;margin-bottom:6px;">📍 ${area}<br>🕐 ${sent}<br>⏰ Exp: <b>${expires}</b></div>
+  <div style="font-weight:bold;margin-bottom:6px;">${p.headline||''}</div>
+  ${hasD?`<div style="background:#fff8e1;border-left:3px solid ${def.color};padding:7px 9px;margin:6px 0;border-radius:3px;font-size:11px;line-height:1.8;">${hazard?`<div>⚡ <b>Hazard:</b> ${hazard}</div>`:''}${maxWind?`<div>💨 <b>Max Wind:</b> ${maxWind}</div>`:''}${maxHail?`<div>🧊 <b>Max Hail:</b> ${maxHail}</div>`:''}${tornado?`<div>🌪 <b>Tornado:</b> ${tornado}</div>`:''}${source?`<div>📡 <b>Source:</b> ${source}</div>`:''}${impact?`<div>🏠 <b>Impact:</b> ${impact}</div>`:''}  </div>`:''}
+  <details><summary style="cursor:pointer;font-weight:bold;color:#333;font-size:11px;">📄 Full Statement</summary><pre style="font-size:10px;background:#f5f5f5;padding:8px;border-radius:4px;max-height:220px;overflow-y:auto;">${desc||'No details.'}</pre></details>
+  ${instr?`<details><summary style="cursor:pointer;font-weight:bold;color:#555;font-size:11px;">🛡 Safety Actions</summary><div style="font-size:11px;background:#fff8f0;padding:8px;border-radius:4px;line-height:1.7;">${instr.replace(/\n/g,' ')}</div></details>`:''}`);}
+function buildWatchPopup(f){
+  const p=f.properties,def=getAlertDef(f);
+  const expires=p.expires?new Date(p.expires).toLocaleString():'?';
+  const sent=p.sent?new Date(p.sent).toLocaleString():'?';
+  const area=(p.areaDesc||'').replace(/;/g,'; ');
+  const desc=p.description||'',instr=p.instruction||'';
+  const isTW=isTornadoWatch(f);
+  const watchNum=isTW?(desc.match(/Tornado Watch Number\s+(\d+)/i)?.[1]||(p.headline||'').match(/Watch\s+#?(\d+)/i)?.[1]||'?'):'';
+  const tb=desc.match(/\* Primary threats include\.\.\.([^]*?)(?:\n\n|\nSUMMARY)/i)?.[1]||'';
+  const threats=tb.split('\n').map(l=>l.replace(/^\s+/,'').trim()).filter(Boolean);
+  const summary=desc.match(/SUMMARY\.\.\.([^]*?)(?:\n\n|PRECAUTIONARY)/i)?.[1]?.trim().replace(/\s+/g,' ')||'';
+  const tc=isLightColor(def.color)?'#000':'#fff';
+  return popupWrap(`<div style="background:${def.color};color:${tc};padding:8px 12px;border-radius:4px;font-weight:bold;font-size:14px;margin-bottom:8px;">${def.icon} ${p.event}${watchNum?' #'+watchNum:''}</div>
+  <div style="font-size:11px;color:#555;line-height:1.8;margin-bottom:8px;">📍 ${area}<br>🕐 ${sent}<br>⏰ Exp: <b>${expires}</b></div>
+  ${threats.length?`<div style="background:#fff3e0;border-left:3px solid ${def.color};padding:7px 10px;border-radius:3px;margin-bottom:8px;"><div style="font-weight:bold;font-size:11px;margin-bottom:4px;">⚠️ Primary Threats</div>${threats.map(t=>`<div style="font-size:11px;padding:2px 0;">• ${t}</div>`).join('')}</div>`:''}
+  ${summary?`<div style="background:#f9f9f9;border-left:3px solid #aaa;padding:7px 10px;border-radius:3px;margin-bottom:8px;font-size:11px;"><b>Summary:</b> ${summary}</div>`:''}
+  <details><summary style="cursor:pointer;font-weight:bold;color:#333;font-size:11px;">📄 Full Statement</summary><pre style="font-size:10px;background:#f5f5f5;padding:8px;border-radius:4px;max-height:240px;overflow-y:auto;">${desc}</pre></details>
+  ${instr?`<details><summary style="cursor:pointer;font-weight:bold;color:#555;font-size:11px;">🛡 Safety Actions</summary><div style="font-size:11px;background:#fff8f0;padding:8px;border-radius:4px;line-height:1.7;">${instr.replace(/\n/g,' ')}</div></details>`:''}`);}
+
+// ── WATCH ZONES ───────────────────────────────────────────────────────
+const watchData=new Map();
+async function fetchWatchPolygons(wf){const id=wf.id;if(watchData.has(id))return;watchData.set(id,null);const zones=wf.properties.affectedZones||[];const res=await Promise.all(zones.slice(0,30).map(u=>fetch(u).then(r=>r.ok?r.json():null).catch(()=>null)));const valid=res.filter(z=>z?.geometry);const def=getAlertDef(wf);const fg=L.featureGroup();valid.forEach(z=>L.geoJSON(z,{pane:'alertsPane',style:{color:def.color,weight:1.5,fillColor:def.color,fillOpacity:0.08,opacity:0.9,dashArray:'8,4'}}).addTo(fg));const pc=buildWatchPopup(wf);fg.eachLayer(l=>l.bindPopup(pc,{maxWidth:380}));fg.addTo(map);const center=valid.length?fg.getBounds().getCenter():map.getCenter();watchData.set(id,{fg,center,popupContent:pc});}
+function clearOldWatchLayers(ids){watchData.forEach((d,id)=>{if(!ids.has(id)){if(d?.fg)map.removeLayer(d.fg);watchData.delete(id);}});}
+async function safeFetch(url){try{const r=await fetch(url,{headers:{'User-Agent':'SevereWeatherTracker/2.0'}});if(!r.ok)return[];return(await r.json()).features||[];}catch(e){dbg(`fetch err: ${e.message}`);return[];}}
 
 // ── ALERTS ────────────────────────────────────────────────────────────
-let allAlerts=[], alertMapLayers=[], lastAutoJumpId=null;
-
+const seenAlertIds=new Set();let firstLoad=true;
+function checkNewAlerts(alerts){if(firstLoad){alerts.forEach(f=>seenAlertIds.add(f.id));firstLoad=false;return;}let top=999;alerts.forEach(f=>{if(seenAlertIds.has(f.id))return;seenAlertIds.add(f.id);const p=getAlertPriority(f);if(p<top)top=p;});if(top<999)playAlertTone(top);}
+function updateLegend(active){const seen=new Map();active.forEach(f=>{const d=getAlertDef(f);if(!seen.has(d.label))seen.set(d.label,d);});const el=document.getElementById('active-legend');if(!seen.size){el.style.display='none';return;}el.style.display='block';document.getElementById('legend-items').innerHTML=[...seen.values()].sort((a,b)=>a.priority-b.priority).map(d=>`<div class="leg-row"><div class="leg-swatch" style="background:${d.color};"></div><span>${d.icon} ${d.label}</span></div>`).join('');}
+let allAlerts=[],alertMapLayers=[],lastAutoJumpId=null;
 async function refreshAlerts(){
-    document.getElementById('status').textContent='Fetching alerts...';
-    document.getElementById('alerts-list').innerHTML='<span class="no-alerts">Loading...</span>';
-    dbg('=== refreshAlerts() ===');
-    const [torRes,svrRes,toaRes,msRes,laRes,alRes,txRes,arRes]=await Promise.all([
-        safeFetch('https://api.weather.gov/alerts/active?code=TOR'),
-        safeFetch('https://api.weather.gov/alerts/active?code=SVR'),
-        safeFetch('https://api.weather.gov/alerts/active?code=TOA'),
-        safeFetch('https://api.weather.gov/alerts/active?area=MS'),
-        safeFetch('https://api.weather.gov/alerts/active?area=LA'),
-        safeFetch('https://api.weather.gov/alerts/active?area=AL'),
-        safeFetch('https://api.weather.gov/alerts/active?area=TX'),
-        safeFetch('https://api.weather.gov/alerts/active?area=AR'),
-    ]);
-    dbg(`TOR=${torRes.length} SVR=${svrRes.length} TOA=${toaRes.length} MS=${msRes.length} LA=${laRes.length} AL=${alRes.length} TX=${txRes.length} AR=${arRes.length}`);
-    const seen=new Set();
-    allAlerts=[...torRes,...svrRes,...toaRes,...msRes,...laRes,...alRes,...txRes,...arRes]
-        .filter(f=>{ if(seen.has(f.id)) return false; seen.add(f.id); return true; })
-        .filter(f=>isTornadoAlert(f)||isSVR(f));
-    dbg(`After filter: TW=${allAlerts.filter(isTornadoWarning).length} TWa=${allAlerts.filter(isTornadoWatch).length} STS=${allAlerts.filter(isSVR).length}`);
-    allAlerts.forEach(f=>dbg(`  ${f.geometry?'✓':'⚠ NO'} geo | zones=${f.properties.affectedZones?.length||0} | "${f.properties.event}"`));
-
-    checkNewAlerts(allAlerts);
-
-    const activeWatchIds=new Set(allAlerts.filter(isTornadoWatch).map(f=>f.id));
-    clearOldWatchLayers(activeWatchIds);
-    if(document.getElementById('chk-tornado-alerts').checked){
-        allAlerts.filter(isTornadoWatch).forEach(f=>fetchWatchPolygons(f));
-    }
-    const jumpTarget=allAlerts.find(f=>isTornadoWarning(f)&&f.id!==lastAutoJumpId);
-    if(jumpTarget){ lastAutoJumpId=jumpTarget.id; setTimeout(()=>autoJump(jumpTarget),800); }
-    renderAlerts();
-    resetCountdown();
+  document.getElementById('status').textContent='Fetching alerts...';
+  document.getElementById('alerts-list').innerHTML='<span class="no-alerts">Loading...</span>';
+  const features=await safeFetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert&region_type=land');
+  dbg(`Alerts: ${features.length}`);
+  const seen=new Set();allAlerts=features.filter(f=>{if(seen.has(f.id))return false;seen.add(f.id);return true;});
+  checkNewAlerts(allAlerts);updateCatCounts(allAlerts);
+  const wids=new Set(allAlerts.filter(isWatch).map(f=>f.id));clearOldWatchLayers(wids);
+  allAlerts.filter(isWatch).forEach(f=>fetchWatchPolygons(f));
+  const jump=allAlerts.find(f=>isTornadoWarning(f)&&f.id!==lastAutoJumpId);
+  if(jump){lastAutoJumpId=jump.id;setTimeout(()=>autoJump(jump),800);}
+  renderAlerts();resetCountdown();
 }
-
-function autoJump(f){
-    try{ map.fitBounds(L.geoJSON(f).getBounds().pad(0.2),{maxZoom:11}); }
-    catch(e){ dbg(`autoJump failed: ${e.message}`); }
-}
-
+function autoJump(f){try{map.fitBounds(L.geoJSON(f).getBounds().pad(0.2),{maxZoom:11});}catch(e){dbg(`autoJump: ${e.message}`);}}
 function renderAlerts(){
-    alertMapLayers.forEach(l=>{ if(l.layer) map.removeLayer(l.layer); });
-    alertMapLayers=[];
-    const showTornado=document.getElementById('chk-tornado-alerts').checked;
-    const showTstorm =document.getElementById('chk-tstorm-alerts').checked;
-    const filtered=allAlerts.filter(f=>(isTornadoAlert(f)&&showTornado)||(isSVR(f)&&showTstorm));
-    const tornadoWarnings=filtered.filter(isTornadoWarning);
-    const tornadoWatches =filtered.filter(isTornadoWatch);
-    const tstormWarnings =filtered.filter(isSVR);
-    document.getElementById('status').textContent=`🌪 ${tornadoWarnings.length} warn / ${tornadoWatches.length} watch | ⛈ ${tstormWarnings.length} SVR`;
-    watchData.forEach(d=>{ if(d?.fg) showTornado?d.fg.addTo(map):map.removeLayer(d.fg); });
-    if(!filtered.length){ document.getElementById('alerts-list').innerHTML='<span class="no-alerts">✅ No active alerts.</span>'; return; }
-    let mapped=0,skipped=0;
-    [...tornadoWarnings,...tstormWarnings].forEach(f=>{
-        if(!f.geometry){ skipped++; return; }
-        const layer=L.geoJSON(f,{pane:'alertsPane',style:()=>alertStyle(f)}).addTo(map);
-        layer.bindPopup(buildPopup(f),{maxWidth:380});
-        alertMapLayers.push({feature:f,layer});
-        mapped++;
-    });
-    tornadoWatches.forEach(f=>alertMapLayers.push({feature:f,layer:null}));
-    dbg(`Mapped ${mapped} warning polygons, skipped ${skipped}`);
-    const sorted=[...tornadoWarnings,...tstormWarnings,...tornadoWatches];
-    let html='',lastType='';
-    sorted.forEach(f=>{
-        const idx=alertMapLayers.findIndex(a=>a.feature===f);
-        const isTW=isTornadoWarning(f),isST=isSVR(f),isWa=isTornadoWatch(f);
-        if(isTW&&lastType!=='tw'){ html+=`<div class="alert-section-title">🌪 Tornado Warnings (${tornadoWarnings.length})</div>`; lastType='tw'; }
-        if(isST&&lastType!=='st'){ html+=`<div class="alert-section-title">⛈ SVR Warnings (${tstormWarnings.length})</div>`; lastType='st'; }
-        if(isWa&&lastType!=='wa'){ html+=`<div class="alert-section-title">👁 Tornado Watches (${tornadoWatches.length})</div>`; lastType='wa'; }
-        const cls=isTW?'alert-item':isST?'alert-item alert-tstorm':'alert-item alert-watch';
-        const exp=f.properties.expires?new Date(f.properties.expires).toLocaleString():'?';
-        const desc=f.properties.description||'';
-        const watchNum=desc.match(/Tornado Watch Number\s+(\d+)/i)?.[1]||'';
-        html+=`<div class="${cls}" onclick="zoomToAlert(${idx})">
-            <strong>${f.properties.event}${watchNum?' #'+watchNum:''}</strong><br>
-            ${(f.properties.areaDesc||'').slice(0,80)}...<br>
-            <small style="color:#666">Exp: ${exp}</small>
-        </div>`;
-    });
-    document.getElementById('alerts-list').innerHTML=html;
+  alertMapLayers.forEach(l=>{if(l.layer)map.removeLayer(l.layer);});alertMapLayers=[];
+  const filtered=allAlerts.filter(passesFilter);
+  watchData.forEach((d,id)=>{if(!d?.fg)return;const f=allAlerts.find(a=>a.id===id);const show=f&&passesFilter(f);show?d.fg.addTo(map):map.removeLayer(d.fg);});
+  updateLegend(filtered);
+  const counts={};filtered.forEach(f=>{const c=getAlertCat(f);counts[c]=(counts[c]||0)+1;});
+  document.getElementById('status').textContent=Object.entries(counts).map(([c,n])=>`${n} ${c}`).join(' | ')||'✅ No active alerts';
+  if(!filtered.length){document.getElementById('alerts-list').innerHTML='<span class="no-alerts">✅ No active alerts in selected filters.</span>';return;}
+  let mapped=0,skipped=0;
+  filtered.filter(f=>!isWatch(f)).forEach(f=>{if(!f.geometry){alertMapLayers.push({feature:f,layer:null,noGeo:true});skipped++;return;}const layer=L.geoJSON(f,{pane:'alertsPane',style:()=>alertMapStyle(f)}).addTo(map);layer.bindPopup(buildGenericPopup(f),{maxWidth:380});alertMapLayers.push({feature:f,layer,noGeo:false});mapped++;});
+  filtered.filter(isWatch).forEach(f=>alertMapLayers.push({feature:f,layer:null,noGeo:false}));
+  dbg(`Mapped ${mapped}, no-geo ${skipped}`);
+  const groups={};filtered.sort((a,b)=>getAlertPriority(a)-getAlertPriority(b)).forEach(f=>{const c=getAlertCat(f);if(!groups[c])groups[c]=[];groups[c].push(f);});
+  const catOrder=['tornado','tstorm','flood','wind','winter','heat','fog','other'];
+  const catLabels={tornado:'🌪 Tornado',tstorm:'⛈ Thunderstorm',flood:'🌊 Flood',wind:'💨 Wind',winter:'❄ Winter',heat:'🌡 Heat/Cold',fog:'🌫 Fog/Smoke',other:'⚠️ Other'};
+  let html='';
+  catOrder.forEach(cat=>{if(!groups[cat])return;html+=`<div class="alert-section-title">${catLabels[cat]} (${groups[cat].length})</div>`;groups[cat].forEach(f=>{const def=getAlertDef(f);const idx=alertMapLayers.findIndex(a=>a.feature===f);const exp=f.properties.expires?new Date(f.properties.expires).toLocaleString():'?';const noGeo=!f.geometry&&!isWatch(f);html+=`<div class="alert-item" style="border-left-color:${def.color};" onclick="zoomToAlert(${idx})"><strong>${def.icon} ${f.properties.event||'Alert'}</strong>${noGeo?' <span style="font-size:9px;color:#777;">(info only)</span>':''}<br><span style="color:#aaa;font-size:11px;">${(f.properties.areaDesc||'').slice(0,70)}...</span><br><small style="color:#555">Exp: ${exp}</small></div>`;});});
+  document.getElementById('alerts-list').innerHTML=html;
 }
-
-window.zoomToAlert=function(i){
-    if(i<0||i>=alertMapLayers.length) return;
-    const{feature:f,layer}=alertMapLayers[i];
-    if(layer){
-        try{ map.fitBounds(layer.getBounds().pad(0.15),{maxZoom:11}); setTimeout(()=>layer.openPopup(),600); return; }catch{}
-    }
-    // Watch — wait briefly in case zones are still loading then open popup
-    function openWatchPopup(attempt){
-        const d=watchData.get(f.id);
-        if(d?.fg){
-            try{
-                map.fitBounds(d.fg.getBounds().pad(0.1),{maxZoom:7});
-                setTimeout(()=>{
-                    // Open popup at center via a temporary marker
-                    L.popup({maxWidth:380}).setLatLng(d.center).setContent(d.popupContent).openOn(map);
-                },700);
-            }catch(e){ dbg(`zoomToWatch err: ${e.message}`); }
-        } else if(attempt<10){
-            // Zones still loading, retry in 500ms
-            setTimeout(()=>openWatchPopup(attempt+1), 500);
-        } else {
-            // Fallback: show popup at map center with available data
-            L.popup({maxWidth:380}).setLatLng(map.getCenter()).setContent(buildWatchPopup(f)).openOn(map);
-        }
-    }
-    openWatchPopup(0);
-};
+window.zoomToAlert=function(i){if(i<0||i>=alertMapLayers.length)return;const{feature:f,layer,noGeo}=alertMapLayers[i];if(layer){try{map.fitBounds(layer.getBounds().pad(0.15),{maxZoom:11});setTimeout(()=>layer.openPopup(),600);return;}catch{}}if(noGeo){L.popup({maxWidth:380}).setLatLng(map.getCenter()).setContent(buildGenericPopup(f)).openOn(map);return;}function openWatch(a){const d=watchData.get(f.id);if(d?.fg){try{map.fitBounds(d.fg.getBounds().pad(0.1),{maxZoom:7});setTimeout(()=>L.popup({maxWidth:380}).setLatLng(d.center).setContent(d.popupContent).openOn(map),700);}catch(e){dbg(e.message);}}else if(a<10){setTimeout(()=>openWatch(a+1),500);}else{L.popup({maxWidth:380}).setLatLng(map.getCenter()).setContent(buildWatchPopup(f)).openOn(map);}}openWatch(0);};
 
 // ── COUNTDOWN ─────────────────────────────────────────────────────────
-let secondsLeft=60;
-function resetCountdown(){ secondsLeft=60; }
-setInterval(()=>{
-    secondsLeft--;
-    document.getElementById('countdown').textContent=`Alerts refresh in ${secondsLeft}s`;
-    if(secondsLeft<=0) refreshAlerts();
-},1000);
+let secondsLeft=60;function resetCountdown(){secondsLeft=60;}
+setInterval(()=>{secondsLeft--;document.getElementById('countdown').textContent=`Alerts refresh in ${secondsLeft}s`;if(secondsLeft<=0)refreshAlerts();},1000);
 
 // ── INIT ──────────────────────────────────────────────────────────────
-// Unlock AudioContext on first user interaction (browser requirement)
-document.addEventListener('click', ()=>{ getAudioCtx(); }, {once:true});
+document.addEventListener('click',()=>getAudioCtx(),{once:true});
+buildPills();
 navigator.geolocation.getCurrentPosition(pos=>map.setView([pos.coords.latitude,pos.coords.longitude],9),()=>{});
 refreshAlerts();
 connectLightning();
+fetchStormCells();
 </script>
 </body>
 </html>
-
